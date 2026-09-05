@@ -1,0 +1,162 @@
+<!-- index.html -->
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Análise Futsal AP</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <div class="main-layout">
+        <!-- Lado Esquerdo: 50% - Gestão de Plantel, Importação/Modelo Excel e Sessão JSON -->
+        <div class="left-panel">
+            <div class="panel-header">
+                <h3 id="home-team-title">Plantel / Jogadores (CASA)</h3>
+                <div class="excel-actions">
+                    <button class="btn-template" onclick="downloadTemplate()" title="Descarregar modelo em Excel">Modelo Excel</button>
+                    <label for="excel-file" class="btn-excel" title="Importar Excel de Plantel">Importar Excel</label>
+                    <input type="file" id="excel-file" accept=".xlsx, .xls, .csv" onchange="importExcel(event)">
+                </div>
+            </div>
+
+            <!-- Secção de Gestão de Sessão (JSON) -->
+            <div class="session-actions-box">
+                <button class="btn-session-save" onclick="exportSessionJSON()">Guardar Sessão (JSON)</button>
+                <label for="json-file" class="btn-session-load">Importar Sessão (JSON)</label>
+                <input type="file" id="json-file" accept=".json" onchange="importSessionJSON(event)">
+            </div>
+
+            <div class="players-list" id="players-container">
+                <!-- Preenchido via JavaScript -->
+            </div>
+        </div>
+
+        <!-- Lado Direito: 50% - Controlo, Relatórios e Rodapé -->
+        <div class="right-panel">
+            <div class="scoreboard-container">
+                
+                <!-- Secção do Cronômetro, Períodos e Nomes das Equipas -->
+                <div class="timer-section">
+                    <div class="teams-input-box">
+                        <div class="team-input-group">
+                            <label>Equipa Casa:</label>
+                            <input type="text" id="input-home-name" value="CASA" oninput="updateTeamNames()">
+                        </div>
+                        <div class="team-input-group">
+                            <label>Equipa Visitante:</label>
+                            <input type="text" id="input-away-name" value="VISITANTE" oninput="updateTeamNames()">
+                        </div>
+                    </div>
+
+                    <div class="period-selector">
+                        <button id="btn-p1" class="period-btn active" onclick="switchPeriod(1)">1º Período</button>
+                        <button id="btn-p2" class="period-btn" onclick="switchPeriod(2)">2º Período</button>
+                        <!-- Botões de Relatório -->
+                        <div class="report-buttons">
+                            <button class="btn-report-excel" onclick="exportReportExcel()">Excel</button>
+                            <button class="btn-report-pdf" onclick="exportReportPDF()">PDF</button>
+                        </div>
+                    </div>
+
+                    <div class="timer-box">
+                        <h2 id="timer">20:00</h2>
+                        <div class="timer-controls">
+                            <button class="btn-start" onclick="startTimer()">Iniciar</button>
+                            <button class="btn-pause" onclick="pauseTimer()">Pausar</button>
+                            <button class="btn-reset" onclick="resetTimer()">Reiniciar</button>
+                        </div>
+                    </div>
+
+                    <div class="timeouts-container">
+                        <div class="to-team">
+                            <span id="to-home-label">Time-out Casa:</span>
+                            <button id="timeout-home-btn" onclick="requestTimeout('home')">Pedir Pausa</button>
+                            <span id="timeout-home-status" class="to-used">Disponível</span>
+                        </div>
+                        <div class="to-team">
+                            <span id="to-away-label">Time-out Visitante:</span>
+                            <button id="timeout-away-btn" onclick="requestTimeout('away')">Pedir Pausa</button>
+                            <span id="timeout-away-status" class="to-used">Disponível</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Painel de Estatísticas / Ações da Partida -->
+                <div class="stats-panel">
+                    <div class="stats-team-col">
+                        <h4 class="team-title-home" id="stats-home-title">CASA</h4>
+                        <div class="stat-row"><button onclick="recordStat('home', 'livres')">Faltas/Livres</button><span id="home-livres">0</span></div>
+                        <div class="stat-row"><button onclick="recordStat('home', 'cantos')">Cantos</button><span id="home-cantos">0</span></div>
+                        <div class="stat-row"><button onclick="recordStat('home', 'lancamentos')">Lançamentos</button><span id="home-lancamentos">0</span></div>
+                        <div class="stat-row"><button onclick="recordStat('home', 'posse')">Perdas Posse</button><span id="home-posse">0</span></div>
+                        <div class="stat-row"><button onclick="recordStat('home', 'passes_falhados')">Passes Falhados</button><span id="home-passes_falhados">0</span></div>
+                        <div class="stat-row"><button onclick="recordStat('home', 'passes_completos')">Passes Certos</button><span id="home-passes_completos">0</span></div>
+                    </div>
+
+                    <div class="stats-timeline">
+                        <h4>Registo de Ações</h4>
+                        <div class="log-box" id="action-log"></div>
+                    </div>
+
+                    <div class="stats-team-col">
+                        <h4 class="team-title-away" id="stats-away-title">VISITANTE</h4>
+                        <div class="stat-row"><span id="away-livres">0</span><button onclick="recordStat('away', 'livres')">Faltas/Livres</button></div>
+                        <div class="stat-row"><span id="away-cantos">0</span><button onclick="recordStat('away', 'cantos')">Cantos</button></div>
+                        <div class="stat-row"><span id="away-lancamentos">0</span><button onclick="recordStat('away', 'lancamentos')">Lançamentos</button></div>
+                        <div class="stat-row"><span id="away-posse">0</span><button onclick="recordStat('away', 'posse')">Perdas Posse</button></div>
+                        <div class="stat-row"><span id="away-passes_falhados">0</span><button onclick="recordStat('away', 'passes_falhados')">Passes Falhados</button></div>
+                        <div class="stat-row"><span id="away-passes_completos">0</span><button onclick="recordStat('away', 'passes_completos')">Passes Certos</button></div>
+                    </div>
+                </div>
+
+                <!-- 4 Campos (2 em cima: Remates, 2 por baixo: Golos) -->
+                <div class="pitch-container-grid">
+                    <div class="pitch-row">
+                        <div class="half-pitch-wrapper">
+                            <h3 id="pitch-remate-home-title">REMATE CASA</h3>
+                            <div class="futsal-pitch pitch-shot" id="pitch-shot-home" ondblclick="handlePitchDoubleClick(event, 'home', 'shot')">
+                                <div class="goal-semicircle-only"></div>
+                            </div>
+                        </div>
+                        <div class="half-pitch-wrapper">
+                            <h3 id="pitch-remate-away-title">REMATE VISITANTE</h3>
+                            <div class="futsal-pitch pitch-shot" id="pitch-shot-away" ondblclick="handlePitchDoubleClick(event, 'away', 'shot')">
+                                <div class="goal-semicircle-only"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="pitch-row">
+                        <div class="half-pitch-wrapper">
+                            <h3 id="pitch-golo-home-title">GOLO CASA (<span id="home-score">0</span>)</h3>
+                            <div class="futsal-pitch pitch-goal" id="pitch-goal-home" ondblclick="handlePitchDoubleClick(event, 'home', 'goal')">
+                                <div class="goal-semicircle-only"></div>
+                            </div>
+                        </div>
+                        <div class="half-pitch-wrapper">
+                            <h3 id="pitch-golo-away-title">GOLO VISITANTE (<span id="away-score">0</span>)</h3>
+                            <div class="futsal-pitch pitch-goal" id="pitch-goal-away" ondblclick="handlePitchDoubleClick(event, 'away', 'goal')">
+                                <div class="goal-semicircle-only"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Rodapé Profissional -->
+                <footer class="app-footer">
+                    andrepe @ 2026
+                </footer>
+
+            </div>
+        </div>
+    </div>
+
+    <!-- Bibliotecas SheetJS (Excel), jsPDF (PDF) e html2canvas (Captura de imagem dos campos para o PDF) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
