@@ -1,4 +1,4 @@
-// app.js
+// app.js (Atualizado com a contagem de entradas e saídas por atleta)
 let currentPeriod = 1;
 let totalSeconds = 20 * 60;
 let timerInterval = null;
@@ -26,7 +26,8 @@ for (let i = 1; i <= 16; i++) {
         name: `Player ${i}`,
         isOnField: false,
         secondsPlayed: 0,
-        secondsRested: 0
+        secondsRested: 0,
+        substitutionsCount: 0 // Contagem de vezes que entra em campo
     });
 }
 
@@ -398,9 +399,9 @@ function exportReportExcel() {
     let wsAcoes = XLSX.utils.aoa_to_sheet(acoesData);
     XLSX.utils.book_append_sheet(wb, wsAcoes, "Eventos e Campos");
 
-    let playersData = [["Número", "Nome do Jogador", "Tempo em Jogo", "Tempo no Banco"]];
+    let playersData = [["Número", "Nome do Jogador", "Tempo em Jogo", "Tempo no Banco", "Nº de Entradas"]];
     players.forEach(p => {
-        playersData.push([p.number, p.name, formatTime(p.secondsPlayed), formatTime(p.secondsRested)]);
+        playersData.push([p.number, p.name, formatTime(p.secondsPlayed), formatTime(p.secondsRested), p.substitutionsCount]);
     });
     let wsPlayers = XLSX.utils.aoa_to_sheet(playersData);
     XLSX.utils.book_append_sheet(wb, wsPlayers, "Plantel");
@@ -435,9 +436,9 @@ async function exportReportPDF() {
     doc.text(`- Cantos: ${homeName} (${statsData.home.cantos}) x (${statsData.away.cantos}) ${awayName}`, 14, y); y += 6;
     doc.text(`- Perdas de Posse: ${homeName} (${statsData.home.posse}) x (${statsData.away.posse}) ${awayName}`, 14, y); y += 10;
 
-    // SECÇÃO DOS TEMPOS DOS JOGADORES NO PDF
+    // SECÇÃO DOS TEMPOS E ENTRADAS DOS JOGADORES NO PDF
     doc.setFont("helvetica", "bold");
-    doc.text("Tempos dos Jogadores (Jogo / Banco):", 14, y);
+    doc.text("Estatísticas dos Jogadores (Tempos e Entradas):", 14, y);
     y += 6;
     doc.setFont("helvetica", "normal");
 
@@ -446,7 +447,7 @@ async function exportReportPDF() {
             doc.addPage();
             y = 20;
         }
-        doc.text(`Nº ${p.number} - ${p.name}: Jogo [${formatTime(p.secondsPlayed)}] | Banco [${formatTime(p.secondsRested)}]`, 14, y);
+        doc.text(`Nº ${p.number} - ${p.name}: Jogo [${formatTime(p.secondsPlayed)}] | Banco [${formatTime(p.secondsRested)}] | Entradas [${p.substitutionsCount}]`, 14, y);
         y += 6;
     });
 
@@ -505,6 +506,10 @@ function togglePlayerField(index) {
     let player = players[index];
     if (player) {
         player.isOnField = !player.isOnField;
+        // Incrementa sempre que o atleta entra em campo (passa de falso para verdadeiro)
+        if (player.isOnField) {
+            player.substitutionsCount++;
+        }
         renderPlayersList();
     }
 }
@@ -544,8 +549,8 @@ function renderPlayersList() {
                     <span class="time-val rest" id="rest-time-${index}">${formatTime(player.secondsRested)}</span>
                 </div>
             </div>
-            <button class="btn-card" onclick="togglePlayerField(${index})" style="background-color: ${player.isOnField ? '#b30000' : '#0073e6'};">
-                ${player.isOnField ? 'Sair' : 'Entrar'}
+            <button class="btn-card" onclick="togglePlayerField(${index})" style="background-color: ${player.isOnField ? '#b30000' : '#0073e6'};" title="Entradas: ${player.substitutionsCount}">
+                ${player.isOnField ? 'Sair' : 'Entrar'} (${player.substitutionsCount})
             </button>
         `;
         
@@ -561,4 +566,5 @@ function updateTimesOnly() {
         if (playElem) playElem.innerText = formatTime(player.secondsPlayed);
         if (restElem) restElem.innerText = formatTime(player.secondsRested);
     });
+}
 }
