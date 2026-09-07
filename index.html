@@ -4,20 +4,26 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Análise Futsal AP</title>
+    <title>Análise Futsal PRO</title>
     <link rel="stylesheet" href="style.css">
+    <!-- Chart.js para os Gráficos Desportivos -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
 
     <div class="main-layout">
-        <!-- Lado Esquerdo: 50% - Gestão de Plantel, Importação/Modelo Excel e Sessão JSON -->
+        <!-- Lado Esquerdo: 50% - Grelha de Atletas e Gráficos -->
         <div class="left-panel">
             <div class="panel-header">
                 <h3 id="home-team-title">Plantel / Jogadores (CASA)</h3>
-                <div class="excel-actions">
-                    <button class="btn-template" onclick="downloadTemplate()" title="Descarregar modelo em Excel">Modelo Excel</button>
-                    <label for="excel-file" class="btn-excel" title="Importar Excel de Plantel">Importar Excel</label>
-                    <input type="file" id="excel-file" accept=".xlsx, .xls, .csv" onchange="importExcel(event)">
+                <div class="header-right-actions">
+                    <button class="btn-tab active" onclick="switchLeftTab('plantel')">Atletas</button>
+                    <button class="btn-tab" onclick="switchLeftTab('graficos')">Gráficos</button>
+                    <div class="excel-actions">
+                        <button class="btn-template" onclick="downloadTemplate()" title="Descarregar modelo">Modelo</button>
+                        <label for="excel-file" class="btn-excel" title="Importar Excel">Excel</label>
+                        <input type="file" id="excel-file" accept=".xlsx, .xls, .csv" onchange="importExcel(event)">
+                    </div>
                 </div>
             </div>
 
@@ -28,12 +34,38 @@
                 <input type="file" id="json-file" accept=".json" onchange="importSessionJSON(event)">
             </div>
 
-            <div class="players-list" id="players-container">
-                <!-- Preenchido via JavaScript -->
+            <!-- Aba 1: Grelha de Atletas -->
+            <div id="tab-plantel" class="tab-content active">
+                <div class="players-grid-container" id="players-container">
+                    <!-- Preenchido via JavaScript -->
+                </div>
+                <!-- Campo de Observações do Jogo -->
+                <div class="observations-box">
+                    <label for="match-observations"><b>Observações do Jogo:</b></label>
+                    <textarea id="match-observations" placeholder="Notas táticas, arbitragem, lesões, etc..."></textarea>
+                </div>
+            </div>
+
+            <!-- Aba 2: Gráficos Desportivos -->
+            <div id="tab-graficos" class="tab-content">
+                <div class="charts-container">
+                    <div class="chart-wrapper">
+                        <h4>Tempos de Jogo dos Atletas (Minutos)</h4>
+                        <canvas id="chartMinutes"></canvas>
+                    </div>
+                    <div class="chart-wrapper">
+                        <h4>Remates e Golos por Equipa</h4>
+                        <canvas id="chartShots"></canvas>
+                    </div>
+                    <div class="chart-wrapper">
+                        <h4>Entradas em Jogo (Substituições)</h4>
+                        <canvas id="chartSubs"></canvas>
+                    </div>
+                </div>
             </div>
         </div>
 
-        <!-- Lado Direito: 50% - Controlo, Relatórios e Rodapé -->
+        <!-- Lado Direito: 50% - Controlo, Relatórios, Campos e Estatísticas -->
         <div class="right-panel">
             <div class="scoreboard-container">
                 
@@ -50,6 +82,16 @@
                         </div>
                     </div>
 
+                    <!-- Indicador de Faltas Acumuladas -->
+                    <div class="fouls-counter-box">
+                        <div class="foul-team-indicator" id="home-fouls-box">
+                            <span>Faltas Casa: <strong id="home-fouls-count">0</strong>/5</span>
+                        </div>
+                        <div class="foul-team-indicator" id="away-fouls-box">
+                            <span>Faltas Visitante: <strong id="away-fouls-count">0</strong>/5</span>
+                        </div>
+                    </div>
+
                     <div class="period-selector">
                         <button id="btn-p1" class="period-btn active" onclick="switchPeriod(1)">1º Período</button>
                         <button id="btn-p2" class="period-btn" onclick="switchPeriod(2)">2º Período</button>
@@ -61,6 +103,10 @@
                     </div>
 
                     <div class="timer-box">
+                        <div class="timer-config-row">
+                            <label for="timer-duration">Duração (min):</label>
+                            <input type="number" id="timer-duration" value="20" min="1" max="60" onchange="changeTimerDuration()">
+                        </div>
                         <h2 id="timer">20:00</h2>
                         <div class="timer-controls">
                             <button class="btn-start" onclick="startTimer()">Iniciar</button>
@@ -83,16 +129,34 @@
                     </div>
                 </div>
 
-                <!-- Painel de Estatísticas / Ações da Partida -->
+                <!-- Painel de Estatísticas / Ações com botões + e - -->
                 <div class="stats-panel">
                     <div class="stats-team-col">
                         <h4 class="team-title-home" id="stats-home-title">CASA</h4>
-                        <div class="stat-row"><button onclick="recordStat('home', 'livres')">Faltas/Livres</button><span id="home-livres">0</span></div>
-                        <div class="stat-row"><button onclick="recordStat('home', 'cantos')">Cantos</button><span id="home-cantos">0</span></div>
-                        <div class="stat-row"><button onclick="recordStat('home', 'lancamentos')">Lançamentos</button><span id="home-lancamentos">0</span></div>
-                        <div class="stat-row"><button onclick="recordStat('home', 'posse')">Perdas Posse</button><span id="home-posse">0</span></div>
-                        <div class="stat-row"><button onclick="recordStat('home', 'passes_falhados')">Passes Falhados</button><span id="home-passes_falhados">0</span></div>
-                        <div class="stat-row"><button onclick="recordStat('home', 'passes_completos')">Passes Certos</button><span id="home-passes_completos">0</span></div>
+                        <div class="stat-row">
+                            <span>Faltas/Livres</span>
+                            <div class="stat-buttons"><button onclick="modifyStat('home', 'livres', -1)">-</button><span id="home-livres">0</span><button onclick="modifyStat('home', 'livres', 1)">+</button></div>
+                        </div>
+                        <div class="stat-row">
+                            <span>Cantos</span>
+                            <div class="stat-buttons"><button onclick="modifyStat('home', 'cantos', -1)">-</button><span id="home-cantos">0</span><button onclick="modifyStat('home', 'cantos', 1)">+</button></div>
+                        </div>
+                        <div class="stat-row">
+                            <span>Lançamentos</span>
+                            <div class="stat-buttons"><button onclick="modifyStat('home', 'lancamentos', -1)">-</button><span id="home-lancamentos">0</span><button onclick="modifyStat('home', 'lancamentos', 1)">+</button></div>
+                        </div>
+                        <div class="stat-row">
+                            <span>Perdas Posse</span>
+                            <div class="stat-buttons"><button onclick="modifyStat('home', 'posse', -1)">-</button><span id="home-posse">0</span><button onclick="modifyStat('home', 'posse', 1)">+</button></div>
+                        </div>
+                        <div class="stat-row">
+                            <span>Passes Falhados</span>
+                            <div class="stat-buttons"><button onclick="modifyStat('home', 'passes_falhados', -1)">-</button><span id="home-passes_falhados">0</span><button onclick="modifyStat('home', 'passes_falhados', 1)">+</button></div>
+                        </div>
+                        <div class="stat-row">
+                            <span>Passes Certos</span>
+                            <div class="stat-buttons"><button onclick="modifyStat('home', 'passes_completos', -1)">-</button><span id="home-passes_completos">0</span><button onclick="modifyStat('home', 'passes_completos', 1)">+</button></div>
+                        </div>
                     </div>
 
                     <div class="stats-timeline">
@@ -102,17 +166,35 @@
 
                     <div class="stats-team-col">
                         <h4 class="team-title-away" id="stats-away-title">VISITANTE</h4>
-                        <div class="stat-row"><span id="away-livres">0</span><button onclick="recordStat('away', 'livres')">Faltas/Livres</button></div>
-                        <div class="stat-row"><span id="away-cantos">0</span><button onclick="recordStat('away', 'cantos')">Cantos</button></div>
-                        <div class="stat-row"><span id="away-lancamentos">0</span><button onclick="recordStat('away', 'lancamentos')">Lançamentos</button></div>
-                        <div class="stat-row"><span id="away-posse">0</span><button onclick="recordStat('away', 'posse')">Perdas Posse</button></div>
-                        <div class="stat-row"><span id="away-passes_falhados">0</span><button onclick="recordStat('away', 'passes_falhados')">Passes Falhados</button></div>
-                        <div class="stat-row"><span id="away-passes_completos">0</span><button onclick="recordStat('away', 'passes_completos')">Passes Certos</button></div>
+                        <div class="stat-row">
+                            <div class="stat-buttons"><button onclick="modifyStat('away', 'livres', -1)">-</button><span id="away-livres">0</span><button onclick="modifyStat('away', 'livres', 1)">+</button></div>
+                            <span>Faltas/Livres</span>
+                        </div>
+                        <div class="stat-row">
+                            <div class="stat-buttons"><button onclick="modifyStat('away', 'cantos', -1)">-</button><span id="away-cantos">0</span><button onclick="modifyStat('away', 'cantos', 1)">+</button></div>
+                            <span>Cantos</span>
+                        </div>
+                        <div class="stat-row">
+                            <div class="stat-buttons"><button onclick="modifyStat('away', 'lancamentos', -1)">-</button><span id="away-lancamentos">0</span><button onclick="modifyStat('away', 'lancamentos', 1)">+</button></div>
+                            <span>Lançamentos</span>
+                        </div>
+                        <div class="stat-row">
+                            <div class="stat-buttons"><button onclick="modifyStat('away', 'posse', -1)">-</button><span id="away-posse">0</span><button onclick="modifyStat('away', 'posse', 1)">+</button></div>
+                            <span>Perdas Posse</span>
+                        </div>
+                        <div class="stat-row">
+                            <div class="stat-buttons"><button onclick="modifyStat('away', 'passes_falhados', -1)">-</button><span id="away-passes_falhados">0</span><button onclick="modifyStat('away', 'passes_falhados', 1)">+</button></div>
+                            <span>Passes Falhados</span>
+                        </div>
+                        <div class="stat-row">
+                            <div class="stat-buttons"><button onclick="modifyStat('away', 'passes_completos', -1)">-</button><span id="away-passes_completos">0</span><button onclick="modifyStat('away', 'passes_completos', 1)">+</button></div>
+                            <span>Passes Certos</span>
+                        </div>
                     </div>
                 </div>
 
-                <!-- 4 Campos (2 em cima: Remates, 2 por baixo: Golos) -->
-                <div class="pitch-container-grid">
+                <!-- 4 Campos (Tema Bege Desportivo) -->
+                <div class="pitch-container-grid" id="capture-pitch-container">
                     <div class="pitch-row">
                         <div class="half-pitch-wrapper">
                             <h3 id="pitch-remate-home-title">REMATE CASA</h3>
@@ -122,8 +204,8 @@
                         </div>
                         <div class="half-pitch-wrapper">
                             <h3 id="pitch-remate-away-title">REMATE VISITANTE</h3>
-                            <div class="futsal-pitch pitch-shot" id="pitch-shot-away" ondblclick="handlePitchDoubleClick(event, 'away', 'shot')">
-                                <div class="goal-semicircle-only"></div>
+                            <div class="futsal-pitch pitch-shot pitch-away-visual" id="pitch-shot-away" ondblclick="handlePitchDoubleClick(event, 'away', 'shot')">
+                                <div class="goal-semicircle-only top-goal"></div>
                             </div>
                         </div>
                     </div>
@@ -137,8 +219,8 @@
                         </div>
                         <div class="half-pitch-wrapper">
                             <h3 id="pitch-golo-away-title">GOLO VISITANTE (<span id="away-score">0</span>)</h3>
-                            <div class="futsal-pitch pitch-goal" id="pitch-goal-away" ondblclick="handlePitchDoubleClick(event, 'away', 'goal')">
-                                <div class="goal-semicircle-only"></div>
+                            <div class="futsal-pitch pitch-goal pitch-away-visual" id="pitch-goal-away" ondblclick="handlePitchDoubleClick(event, 'away', 'goal')">
+                                <div class="goal-semicircle-only top-goal"></div>
                             </div>
                         </div>
                     </div>
@@ -153,7 +235,16 @@
         </div>
     </div>
 
-    <!-- Bibliotecas SheetJS (Excel), jsPDF (PDF) e html2canvas (Captura de imagem dos campos para o PDF) -->
+    <!-- Modal / Seletor em Miniatura para Atletas Casa -->
+    <div id="player-selector-modal" class="modal-backdrop" style="display: none;">
+        <div class="modal-content">
+            <h3>Selecione o Atleta Autor do Lance</h3>
+            <div id="modal-players-grid" class="modal-players-grid"></div>
+            <button class="modal-close-btn" onclick="closePlayerModal()">Cancelar / Sem Atleta</button>
+        </div>
+    </div>
+
+    <!-- Bibliotecas SheetJS (Excel), jsPDF (PDF) e html2canvas -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>

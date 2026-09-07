@@ -1,13 +1,22 @@
-// app.js (Atualizado com a contagem de entradas e saídas por atleta)
+// app.js - Análise Futsal PRO
 let currentPeriod = 1;
-let totalSeconds = 20 * 60;
+let periodDurationMinutes = 20;
+let totalSeconds = periodDurationMinutes * 60;
 let timerInterval = null;
 let isRunning = false;
 
 let homeGoals = 0;
 let awayGoals = 0;
 
-let actionLogsHistory = [];
+let actionLogsHistory = {
+    1: [],
+    2: []
+};
+
+let periodPitchHTML = {
+    1: null,
+    2: null
+};
 
 let timeoutsUsed = {
     1: { home: false, away: false },
@@ -15,8 +24,14 @@ let timeoutsUsed = {
 };
 
 let statsData = {
-    home: { livres: 0, cantos: 0, lancamentos: 0, posse: 0, passes_falhados: 0, passes_completos: 0 },
-    away: { livres: 0, cantos: 0, lancamentos: 0, posse: 0, passes_falhados: 0, passes_completos: 0 }
+    1: {
+        home: { livres: 0, cantos: 0, lancamentos: 0, posse: 0, passes_falhados: 0, passes_completos: 0, remates: 0, golos: 0 },
+        away: { livres: 0, cantos: 0, lancamentos: 0, posse: 0, passes_falhados: 0, passes_completos: 0, remates: 0, golos: 0 }
+    },
+    2: {
+        home: { livres: 0, cantos: 0, lancamentos: 0, posse: 0, passes_falhados: 0, passes_completos: 0, remates: 0, golos: 0 },
+        away: { livres: 0, cantos: 0, lancamentos: 0, posse: 0, passes_falhados: 0, passes_completos: 0, remates: 0, golos: 0 }
+    }
 };
 
 let players = [];
@@ -25,17 +40,44 @@ for (let i = 1; i <= 16; i++) {
         number: i,
         name: `Player ${i}`,
         isOnField: false,
-        secondsPlayed: 0,
-        secondsRested: 0,
-        substitutionsCount: 0 // Contagem de vezes que entra em campo
+        secondsPlayedP1: 0,
+        secondsRestedP1: 0,
+        secondsPlayedP2: 0,
+        secondsRestedP2: 0,
+        substitutionsCount: 0,
+        yellowCards: 0,
+        redCards: 0
     });
 }
+
+let pendingPitchAction = null;
+
+let chartMinutesInstance = null;
+let chartShotsInstance = null;
+let chartSubsInstance = null;
 
 window.onload = function() {
     renderPlayersList();
     updateTimerDisplay();
     updateTimeoutUI();
+    updateFoulsUI();
+    updateStatsDisplay();
+    initCharts();
 };
+
+function switchLeftTab(tabName) {
+    document.querySelectorAll('.btn-tab').forEach(btn => btn.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(tab => tab.classList.remove('active'));
+
+    if (tabName === 'plantel') {
+        document.querySelector('.btn-tab:nth-child(1)').classList.add('active');
+        document.getElementById('tab-plantel').classList.add('active');
+    } else if (tabName === 'graficos') {
+        document.querySelector('.btn-tab:nth-child(2)').classList.add('active');
+        document.getElementById('tab-graficos').classList.add('active');
+        updateChartsData();
+    }
+}
 
 function updateTeamNames() {
     let homeName = document.getElementById('input-home-name').value || 'CASA';
@@ -54,21 +96,35 @@ function updateTeamNames() {
     document.getElementById('pitch-golo-away-title').innerHTML = `GOLO ${awayName.toUpperCase()} (<span id="away-score">${awayGoals}</span>)`;
 }
 
+function changeTimerDuration() {
+    if (isRunning) return;
+    let inputVal = parseInt(document.getElementById('timer-duration').value);
+    if (!isNaN(inputVal) && inputVal > 0) {
+        periodDurationMinutes = inputVal;
+        totalSeconds = periodDurationMinutes * 60;
+        updateTimerDisplay();
+    }
+}
+
 // -------------------------------------------------------------
-// GESTÃO DE SESSÃO EM JSON (Guardar e Importar)
+// SESSÃO JSON
 // -------------------------------------------------------------
 function exportSessionJSON() {
     let sessionData = {
+        version: "PRO",
         currentPeriod: currentPeriod,
+        periodDurationMinutes: periodDurationMinutes,
         totalSeconds: totalSeconds,
         homeGoals: homeGoals,
         awayGoals: awayGoals,
         homeName: document.getElementById('input-home-name').value,
         awayName: document.getElementById('input-away-name').value,
+        observations: document.getElementById('match-observations').value,
         timeoutsUsed: timeoutsUsed,
         statsData: statsData,
         players: players,
         actionLogsHistory: actionLogsHistory,
+        periodPitchHTML: periodPitchHTML,
         htmlLogs: document.getElementById('action-log').innerHTML,
         pitchMarkers: {
             homeShot: document.getElementById('pitch-shot-home').innerHTML,
@@ -81,7 +137,7 @@ function exportSessionJSON() {
     let dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(sessionData, null, 2));
     let downloadAnchor = document.createElement('a');
     downloadAnchor.setAttribute("href", dataStr);
-    downloadAnchor.setAttribute("download", `sessao_futsal_${sessionData.homeName}_vs_${sessionData.awayName}.json`);
+    downloadAnchor.setAttribute("download", `sessao_futsal_pro_${sessionData.homeName}_vs_${sessionData.awayName}.json`);
     document.body.appendChild(downloadAnchor);
     downloadAnchor.click();
     downloadAnchor.remove();
@@ -95,20 +151,23 @@ function importSessionJSON(event) {
     reader.onload = function(e) {
         try {
             let sessionData = JSON.parse(e.target.result);
-
             pauseTimer();
             currentPeriod = sessionData.currentPeriod || 1;
-            totalSeconds = sessionData.totalSeconds || (20 * 60);
+            periodDurationMinutes = sessionData.periodDurationMinutes || 20;
+            document.getElementById('timer-duration').value = periodDurationMinutes;
+            totalSeconds = sessionData.totalSeconds || (periodDurationMinutes * 60);
             homeGoals = sessionData.homeGoals || 0;
             awayGoals = sessionData.awayGoals || 0;
 
             document.getElementById('input-home-name').value = sessionData.homeName || 'CASA';
             document.getElementById('input-away-name').value = sessionData.awayName || 'VISITANTE';
+            document.getElementById('match-observations').value = sessionData.observations || '';
             
-            timeoutsUsed = sessionData.timeoutsUsed || { 1: { home: false, away: false }, 2: { home: false, away: false } };
+            timeoutsUsed = sessionData.timeoutsUsed || timeoutsUsed;
             statsData = sessionData.statsData || statsData;
             players = sessionData.players || players;
-            actionLogsHistory = sessionData.actionLogsHistory || [];
+            actionLogsHistory = sessionData.actionLogsHistory || { 1: [], 2: [] };
+            periodPitchHTML = sessionData.periodPitchHTML || { 1: null, 2: null };
 
             document.getElementById('home-score').innerText = homeGoals;
             document.getElementById('away-score').innerText = awayGoals;
@@ -124,21 +183,16 @@ function importSessionJSON(event) {
             document.getElementById('btn-p1').className = currentPeriod === 1 ? 'period-btn active' : 'period-btn';
             document.getElementById('btn-p2').className = currentPeriod === 2 ? 'period-btn active' : 'period-btn';
 
-            for (let t of ['home', 'away']) {
-                for (let k in statsData[t]) {
-                    let el = document.getElementById(`${t}-${k}`);
-                    if (el) el.innerText = statsData[t][k];
-                }
-            }
-
             updateTeamNames();
             updateTimerDisplay();
             updateTimeoutUI();
+            updateFoulsUI();
+            updateStatsDisplay();
             renderPlayersList();
 
-            alert("Sessão recuperada com sucesso!");
+            alert("Sessão PRO recuperada com sucesso!");
         } catch (err) {
-            alert("Erro ao ler o ficheiro JSON. Certifique-se de que é um ficheiro de sessão válido.");
+            alert("Erro ao ler o ficheiro JSON.");
             console.error(err);
         }
     };
@@ -146,7 +200,7 @@ function importSessionJSON(event) {
 }
 
 // -------------------------------------------------------------
-// MODELO E IMPORTAÇÃO EXCEL
+// EXCEL & MODELO
 // -------------------------------------------------------------
 function downloadTemplate() {
     let templateData = [
@@ -156,15 +210,13 @@ function downloadTemplate() {
         [],
         ["Número (Coluna A)", "Nome do Atleta (Coluna B)"]
     ];
-
     for (let i = 1; i <= 16; i++) {
         templateData.push([i, `Atleta ${i}`]);
     }
-
     let ws = XLSX.utils.aoa_to_sheet(templateData);
     let wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Plantel e Equipas");
-    XLSX.writeFile(wb, "modelo_futsal_completo.xlsx");
+    XLSX.writeFile(wb, "modelo_futsal_pro.xlsx");
 }
 
 function importExcel(event) {
@@ -180,45 +232,57 @@ function importExcel(event) {
         let json = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
 
         let importedPlayers = 0;
-
         for (let i = 0; i < json.length; i++) {
             let colA = json[i][0];
             let colB = json[i][1];
-
             if (colA && String(colA).toLowerCase().includes("equipa casa") && colB) {
                 document.getElementById('input-home-name').value = colB;
             }
             if (colA && String(colA).toLowerCase().includes("equipa visitante") && colB) {
                 document.getElementById('input-away-name').value = colB;
             }
-
             if (colA !== undefined && colB !== undefined && !isNaN(colA) && importedPlayers < 16) {
                 players[importedPlayers].number = colA;
                 players[importedPlayers].name = String(colB).trim();
                 importedPlayers++;
             }
         }
-
         updateTeamNames();
         renderPlayersList();
-        alert(`Importação concluída com sucesso! ${importedPlayers} atletas carregados.`);
+        alert(`Importação concluída! ${importedPlayers} atletas carregados.`);
     };
     reader.readAsArrayBuffer(file);
 }
 
 // -------------------------------------------------------------
-// CRONÓMETRO E PERÍODOS
+// CRONÓMETRO E PERÍODOS (Guarda o HTML atual do campo antes de mudar)
 // -------------------------------------------------------------
 function switchPeriod(period) {
     pauseTimer();
+    
+    // Guardar o estado visual do período anterior antes de mudar
+    periodPitchHTML[currentPeriod] = document.getElementById('capture-pitch-container').innerHTML;
+
     currentPeriod = period;
-    totalSeconds = 20 * 60;
+    totalSeconds = periodDurationMinutes * 60;
     
     document.getElementById('btn-p1').className = period === 1 ? 'period-btn active' : 'period-btn';
     document.getElementById('btn-p2').className = period === 2 ? 'period-btn active' : 'period-btn';
     
+    // Se o novo período já tiver dados guardados, restaura-os; caso contrário, limpa para novo uso
+    if (periodPitchHTML[period]) {
+        document.getElementById('capture-pitch-container').innerHTML = periodPitchHTML[period];
+    } else {
+        document.getElementById('pitch-shot-home').innerHTML = '<div class="goal-semicircle-only"></div>';
+        document.getElementById('pitch-shot-away').innerHTML = '<div class="goal-semicircle-only top-goal"></div>';
+        document.getElementById('pitch-goal-home').innerHTML = '<div class="goal-semicircle-only"></div>';
+        document.getElementById('pitch-goal-away').innerHTML = '<div class="goal-semicircle-only top-goal"></div>';
+    }
+
     updateTimerDisplay();
     updateTimeoutUI();
+    updateFoulsUI();
+    updateStatsDisplay();
     logAction('SISTEMA', `Início do ${period}º Período`, null, null);
 }
 
@@ -236,15 +300,15 @@ function startTimer() {
             if (totalSeconds > 0) {
                 totalSeconds--;
                 updateTimerDisplay();
-
                 players.forEach(player => {
                     if (player.isOnField) {
-                        player.secondsPlayed++;
+                        if (currentPeriod === 1) player.secondsPlayedP1++;
+                        else player.secondsPlayedP2++;
                     } else {
-                        player.secondsRested++;
+                        if (currentPeriod === 1) player.secondsRestedP1++;
+                        else player.secondsRestedP2++;
                     }
                 });
-
                 updateTimesOnly();
             } else {
                 pauseTimer();
@@ -261,7 +325,7 @@ function pauseTimer() {
 
 function resetTimer() {
     pauseTimer();
-    totalSeconds = 20 * 60;
+    totalSeconds = periodDurationMinutes * 60;
     updateTimerDisplay();
 }
 
@@ -289,47 +353,44 @@ function updateTimeoutUI() {
     document.getElementById('timeout-away-btn').disabled = awayUsed;
 }
 
-// -------------------------------------------------------------
-// REGISTOS NOS CAMPOS E ESTATÍSTICAS
-// -------------------------------------------------------------
-function handlePitchDoubleClick(event, team, type) {
-    const pitch = event.currentTarget;
-    const rect = pitch.getBoundingClientRect();
-    const x = ((event.clientX - rect.left) / rect.width) * 100;
-    const y = ((event.clientY - rect.top) / rect.height) * 100;
+function updateFoulsUI() {
+    let homeFouls = statsData[currentPeriod].home.livres;
+    let awayFouls = statsData[currentPeriod].away.livres;
 
-    addMarker(pitch, x, y, type);
+    document.getElementById('home-fouls-count').innerText = homeFouls;
+    document.getElementById('away-fouls-count').innerText = awayFouls;
 
-    let teamName = team === 'home' ? (document.getElementById('input-home-name').value || 'CASA') : (document.getElementById('input-away-name').value || 'VISITANTE');
+    document.getElementById('home-fouls-box').className = homeFouls >= 5 ? 'foul-team-indicator limit-reached' : 'foul-team-indicator';
+    document.getElementById('away-fouls-box').className = awayFouls >= 5 ? 'foul-team-indicator limit-reached' : 'foul-team-indicator';
+}
 
-    if (type === 'goal') {
-        if (team === 'home') {
-            homeGoals++;
-            document.getElementById('home-score').innerText = homeGoals;
-        } else {
-            awayGoals++;
-            document.getElementById('away-score').innerText = awayGoals;
+function updateStatsDisplay() {
+    let curStats = statsData[currentPeriod];
+    for (let t of ['home', 'away']) {
+        for (let k in curStats[t]) {
+            let el = document.getElementById(`${t}-${k}`);
+            if (el) el.innerText = curStats[t][k];
         }
-        logAction(teamName.toUpperCase(), `GOLO (${currentPeriod}ºP)`, x.toFixed(0), y.toFixed(0));
-    } else {
-        logAction(teamName.toUpperCase(), `Remate (${currentPeriod}ºP)`, x.toFixed(0), y.toFixed(0));
     }
 }
 
-function addMarker(pitchElement, xPercent, yPercent, type) {
-    const marker = document.createElement('div');
-    marker.className = `pitch-marker ${type === 'goal' ? 'marker-goal' : 'marker-shot'}`;
-    marker.style.left = `${xPercent}%`;
-    marker.style.top = `${yPercent}%`;
-    pitchElement.appendChild(marker);
-}
+// -------------------------------------------------------------
+// ESTATÍSTICAS COM BOTÕES + E -
+// -------------------------------------------------------------
+function modifyStat(team, actionType, delta) {
+    statsData[currentPeriod][team][actionType] += delta;
+    if (statsData[currentPeriod][team][actionType] < 0) {
+        statsData[currentPeriod][team][actionType] = 0;
+        return;
+    }
+    
+    document.getElementById(`${team}-${actionType}`).innerText = statsData[currentPeriod][team][actionType];
+    
+    if (actionType === 'livres') {
+        updateFoulsUI();
+    }
 
-function recordStat(team, actionType) {
-    statsData[team][actionType]++;
-    document.getElementById(`${team}-${actionType}`).innerText = statsData[team][actionType];
-    
     let teamName = team === 'home' ? (document.getElementById('input-home-name').value || 'CASA') : (document.getElementById('input-away-name').value || 'VISITANTE');
-    
     let actionNames = {
         livres: 'Falta/Livre',
         cantos: 'Canto',
@@ -339,7 +400,90 @@ function recordStat(team, actionType) {
         passes_completos: 'Passe Certo'
     };
     
-    logAction(teamName.toUpperCase(), actionNames[actionType], null, null);
+    let sign = delta > 0 ? 'Registo' : 'Correção (-)';
+    logAction(teamName.toUpperCase(), `${actionNames[actionType]} (${sign})`, null, null);
+}
+
+// -------------------------------------------------------------
+// REGISTOS NOS CAMPOS
+// -------------------------------------------------------------
+function handlePitchDoubleClick(event, team, type) {
+    const pitch = event.currentTarget;
+    const rect = pitch.getBoundingClientRect();
+    const x = ((event.clientX - rect.left) / rect.width) * 100;
+    const y = ((event.clientY - rect.top) / rect.height) * 100;
+
+    let homeName = document.getElementById('input-home-name').value || 'CASA';
+    let awayName = document.getElementById('input-away-name').value || 'VISITANTE';
+    let teamName = team === 'home' ? homeName : awayName;
+
+    if (team === 'home') {
+        let activePlayers = players.filter(p => p.isOnField);
+        if (activePlayers.length > 0) {
+            pendingPitchAction = { pitch, type, teamName, x, y };
+            showPlayerSelectorModal(activePlayers);
+            return;
+        }
+    }
+
+    addMarker(pitch, x, y, type);
+    finalizePitchAction(type, teamName, x, y, '');
+}
+
+function showPlayerSelectorModal(activePlayers) {
+    let grid = document.getElementById('modal-players-grid');
+    grid.innerHTML = '';
+    activePlayers.forEach(p => {
+        let btn = document.createElement('button');
+        btn.className = 'mini-player-badge';
+        btn.innerText = `#${p.number}`;
+        btn.title = p.name;
+        btn.onclick = function() {
+            addMarker(pendingPitchAction.pitch, pendingPitchAction.x, pendingPitchAction.y, pendingPitchAction.type);
+            finalizePitchAction(pendingPitchAction.type, pendingPitchAction.teamName, pendingPitchAction.x, pendingPitchAction.y, ` (Atleta: #${p.number})`);
+            closePlayerModal(true);
+        };
+        grid.appendChild(btn);
+    });
+    document.getElementById('player-selector-modal').style.display = 'flex';
+}
+
+function closePlayerModal(confirmed = false) {
+    if (!confirmed && pendingPitchAction) {
+        addMarker(pendingPitchAction.pitch, pendingPitchAction.x, pendingPitchAction.y, pendingPitchAction.type);
+        finalizePitchAction(pendingPitchAction.type, pendingPitchAction.teamName, pendingPitchAction.x, pendingPitchAction.y, '');
+    }
+    document.getElementById('player-selector-modal').style.display = 'none';
+    pendingPitchAction = null;
+}
+
+function finalizePitchAction(type, teamName, x, y, playerStr) {
+    let homeNameVal = document.getElementById('input-home-name').value || 'CASA';
+    let isHome = teamName.toUpperCase() === homeNameVal.toUpperCase();
+
+    if (type === 'goal') {
+        statsData[currentPeriod][isHome ? 'home' : 'away'].golos++;
+        if (isHome) {
+            homeGoals++;
+            document.getElementById('home-score').innerText = homeGoals;
+        } else {
+            awayGoals++;
+            document.getElementById('away-score').innerText = awayGoals;
+        }
+        logAction(teamName.toUpperCase(), `GOLO (${currentPeriod}ºP)${playerStr}`, x.toFixed(0), y.toFixed(0));
+    } else {
+        statsData[currentPeriod][isHome ? 'home' : 'away'].remates++;
+        logAction(teamName.toUpperCase(), `Remate (${currentPeriod}ºP)${playerStr}`, x.toFixed(0), y.toFixed(0));
+    }
+}
+
+function addMarker(pitchElement, xPercent, yPercent, type) {
+    const marker = document.createElement('div');
+    let periodClass = currentPeriod === 1 ? 'marker-p1' : 'marker-p2';
+    marker.className = `pitch-marker ${type === 'goal' ? 'marker-goal' : 'marker-shot'} ${periodClass}`;
+    marker.style.left = `${xPercent}%`;
+    marker.style.top = `${yPercent}%`;
+    pitchElement.appendChild(marker);
 }
 
 function logAction(teamName, actionDesc, coordX, coordY) {
@@ -351,175 +495,51 @@ function logAction(teamName, actionDesc, coordX, coordY) {
         fullDesc += ` [X: ${coordX}%, Y: ${coordY}%]`;
     }
 
-    actionLogsHistory.push({
+    let logEntry = {
         periodo: `${currentPeriod}ºP`,
         tempo: currentClock,
         equipa: teamName,
         acao: fullDesc,
         x: coordX,
         y: coordY
-    });
+    };
+
+    actionLogsHistory[currentPeriod].push(logEntry);
     
     let entry = document.createElement('div');
     entry.className = 'log-entry';
     entry.innerHTML = `[${currentPeriod}ºP - ${currentClock}] <b>${teamName}</b>: ${fullDesc}`;
-    
     logBox.insertBefore(entry, logBox.firstChild);
 }
 
 // -------------------------------------------------------------
-// RELATÓRIOS (EXCEL E PDF)
-// -------------------------------------------------------------
-function exportReportExcel() {
-    let homeName = document.getElementById('input-home-name').value || 'CASA';
-    let awayName = document.getElementById('input-away-name').value || 'VISITANTE';
-
-    let wb = XLSX.utils.book_new();
-
-    let resumoData = [
-        ["Relatório da Partida - Análise Futsal AP"],
-        ["Equipa Casa", homeName, "Golos", homeGoals],
-        ["Equipa Visitante", awayName, "Golos", awayGoals],
-        [],
-        ["Estatísticas", homeName, awayName],
-        ["Faltas/Livres", statsData.home.livres, statsData.away.livres],
-        ["Cantos", statsData.home.cantos, statsData.away.cantos],
-        ["Lançamentos", statsData.home.lancamentos, statsData.away.lancamentos],
-        ["Perdas de Posse", statsData.home.posse, statsData.away.posse],
-        ["Passes Falhados", statsData.home.passes_falhados, statsData.away.passes_falhados],
-        ["Passes Certos", statsData.home.passes_completos, statsData.away.passes_completos]
-    ];
-    let wsResumo = XLSX.utils.aoa_to_sheet(resumoData);
-    XLSX.utils.book_append_sheet(wb, wsResumo, "Resumo");
-
-    let acoesData = [["Período", "Tempo", "Equipa", "Ação / Evento", "Coord X (%)", "Coord Y (%)"]];
-    actionLogsHistory.forEach(log => {
-        acoesData.push([log.periodo, log.tempo, log.equipa, log.acao, log.x !== null ? log.x : '-', log.y !== null ? log.y : '-']);
-    });
-    let wsAcoes = XLSX.utils.aoa_to_sheet(acoesData);
-    XLSX.utils.book_append_sheet(wb, wsAcoes, "Eventos e Campos");
-
-    let playersData = [["Número", "Nome do Jogador", "Tempo em Jogo", "Tempo no Banco", "Nº de Entradas"]];
-    players.forEach(p => {
-        playersData.push([p.number, p.name, formatTime(p.secondsPlayed), formatTime(p.secondsRested), p.substitutionsCount]);
-    });
-    let wsPlayers = XLSX.utils.aoa_to_sheet(playersData);
-    XLSX.utils.book_append_sheet(wb, wsPlayers, "Plantel");
-
-    XLSX.writeFile(wb, `Relatorio_Futsal_${homeName}_vs_${awayName}.xlsx`);
-}
-
-async function exportReportPDF() {
-    const { jsPDF } = window.jspdf;
-    let doc = new jsPDF();
-
-    let homeName = document.getElementById('input-home-name').value || 'CASA';
-    let awayName = document.getElementById('input-away-name').value || 'VISITANTE';
-
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(16);
-    doc.text("Relatorio Oficial - Análise Futsal AP", 14, 20);
-
-    doc.setFontSize(12);
-    doc.text(`Partida: ${homeName} ${homeGoals} - ${awayGoals} ${awayName}`, 14, 30);
-
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(10);
-    doc.text(`Gerado em: ${new Date().toLocaleDateString()} por andrepe @ 2026`, 14, 38);
-
-    let y = 48;
-    doc.setFont("helvetica", "bold");
-    doc.text("Estatísticas Coletivas:", 14, y);
-    y += 6;
-    doc.setFont("helvetica", "normal");
-    doc.text(`- Faltas/Livres: ${homeName} (${statsData.home.livres}) x (${statsData.away.livres}) ${awayName}`, 14, y); y += 6;
-    doc.text(`- Cantos: ${homeName} (${statsData.home.cantos}) x (${statsData.away.cantos}) ${awayName}`, 14, y); y += 6;
-    doc.text(`- Perdas de Posse: ${homeName} (${statsData.home.posse}) x (${statsData.away.posse}) ${awayName}`, 14, y); y += 10;
-
-    // SECÇÃO DOS TEMPOS E ENTRADAS DOS JOGADORES NO PDF
-    doc.setFont("helvetica", "bold");
-    doc.text("Estatísticas dos Jogadores (Tempos e Entradas):", 14, y);
-    y += 6;
-    doc.setFont("helvetica", "normal");
-
-    players.forEach(p => {
-        if (y > 280) {
-            doc.addPage();
-            y = 20;
-        }
-        doc.text(`Nº ${p.number} - ${p.name}: Jogo [${formatTime(p.secondsPlayed)}] | Banco [${formatTime(p.secondsRested)}] | Entradas [${p.substitutionsCount}]`, 14, y);
-        y += 6;
-    });
-
-    y += 4;
-
-    // CAPTURA DOS CAMPOS DE FUTSAL PARA O PDF
-    doc.setFont("helvetica", "bold");
-    doc.text("Mapas Visuais dos Campos (Remates e Golos):", 14, y);
-    y += 6;
-
-    try {
-        let pitchContainer = document.querySelector('.pitch-container-grid');
-        let canvas = await html2canvas(pitchContainer, { backgroundColor: '#1e1e1e', scale: 2 });
-        let imgData = canvas.toDataURL('image/png');
-        
-        let imgWidth = 180;
-        let imgHeight = (canvas.height * imgWidth) / canvas.width;
-        
-        if (y + imgHeight > 280) {
-            doc.addPage();
-            y = 20;
-        }
-
-        doc.addImage(imgData, 'PNG', 14, y, imgWidth, imgHeight);
-        y += imgHeight + 10;
-    } catch (err) {
-        console.error("Erro ao capturar os campos para PDF", err);
-    }
-
-    if (y > 270) {
-        doc.addPage();
-        y = 20;
-    }
-
-    doc.setFont("helvetica", "bold");
-    doc.text("Histórico de Ações Detalhado:", 14, y);
-    y += 6;
-    doc.setFont("helvetica", "normal");
-
-    actionLogsHistory.forEach(log => {
-        if (y > 280) {
-            doc.addPage();
-            y = 20;
-        }
-        doc.text(`[${log.periodo} - ${log.tempo}] ${log.equipa}: ${log.acao}`, 14, y);
-        y += 6;
-    });
-
-    doc.save(`Relatorio_Futsal_${homeName}_vs_${awayName}.pdf`);
-}
-
-// -------------------------------------------------------------
-// GESTÃO DO PLANTEL
+// CARTÕES E GESTÃO DE PLANTEL
 // -------------------------------------------------------------
 function togglePlayerField(index) {
     let player = players[index];
     if (player) {
         player.isOnField = !player.isOnField;
-        // Incrementa sempre que o atleta entra em campo (passa de falso para verdadeiro)
-        if (player.isOnField) {
-            player.substitutionsCount++;
-        }
+        if (player.isOnField) player.substitutionsCount++;
         renderPlayersList();
     }
 }
 
-function updatePlayerNumber(index, newNum) {
-    players[index].number = newNum;
-}
+function updatePlayerNumber(index, newNum) { players[index].number = newNum; }
+function updatePlayerName(index, newName) { players[index].name = newName; }
 
-function updatePlayerName(index, newName) {
-    players[index].name = newName;
+function addCard(event, index, cardType) {
+    event.stopPropagation();
+    let player = players[index];
+    let teamName = document.getElementById('input-home-name').value || 'CASA';
+    if (cardType === 'yellow') {
+        player.yellowCards++;
+        logAction(teamName.toUpperCase(), `Cartão Amarelo: #${player.number} ${player.name}`, null, null);
+    } else if (cardType === 'red') {
+        player.redCards++;
+        player.isOnField = false;
+        logAction(teamName.toUpperCase(), `Cartão Vermelho: #${player.number} ${player.name}`, null, null);
+    }
+    renderPlayersList();
 }
 
 function formatTime(totalSecs) {
@@ -533,38 +553,296 @@ function renderPlayersList() {
     container.innerHTML = '';
 
     players.forEach((player, index) => {
-        let card = document.createElement('div');
-        card.className = `player-card ${player.isOnField ? 'field' : ''}`;
+        let tile = document.createElement('div');
+        tile.className = `player-card-tile ${player.isOnField ? 'field' : ''}`;
+        tile.onclick = function() { togglePlayerField(index); };
         
-        card.innerHTML = `
-            <input type="text" class="player-num-input" value="${player.number}" onchange="updatePlayerNumber(${index}, this.value)">
-            <input type="text" class="player-name-input" value="${player.name}" onchange="updatePlayerName(${index}, this.value)">
-            <div class="player-times-box">
-                <div class="time-item">
-                    <span class="time-label">Jogo</span>
-                    <span class="time-val play" id="play-time-${index}">${formatTime(player.secondsPlayed)}</span>
+        let totalPlayed = player.secondsPlayedP1 + player.secondsPlayedP2;
+        let totalRested = player.secondsRestedP1 + player.secondsRestedP2;
+
+        tile.innerHTML = `
+            <div class="tile-header">
+                <input type="text" class="player-num-input" value="${player.number}" onclick="event.stopPropagation()" onchange="updatePlayerNumber(${index}, this.value)">
+                <input type="text" class="player-name-input" value="${player.name}" onclick="event.stopPropagation()" onchange="updatePlayerName(${index}, this.value)">
+            </div>
+            <div class="tile-timers-box">
+                <div class="tile-timer-col">
+                    <span class="tile-time-label">Jogo</span>
+                    <span class="tile-time-val play" id="tile-play-${index}">${formatTime(totalPlayed)}</span>
                 </div>
-                <div class="time-item">
-                    <span class="time-label">Banco</span>
-                    <span class="time-val rest" id="rest-time-${index}">${formatTime(player.secondsRested)}</span>
+                <div class="tile-timer-col">
+                    <span class="tile-time-label">Banco</span>
+                    <span class="tile-time-val rest" id="tile-rest-${index}">${formatTime(totalRested)}</span>
                 </div>
             </div>
-            <button class="btn-card" onclick="togglePlayerField(${index})" style="background-color: ${player.isOnField ? '#b30000' : '#0073e6'};" title="Entradas: ${player.substitutionsCount}">
-                ${player.isOnField ? 'Sair' : 'Entrar'} (${player.substitutionsCount})
-            </button>
+            <div class="tile-footer">
+                <div class="tile-cards" onclick="event.stopPropagation()">
+                    <button class="card-square yellow-sq" onclick="addCard(event, ${index}, 'yellow')" title="Amarelo">${player.yellowCards > 0 ? player.yellowCards : '🟨'}</button>
+                    <button class="card-square red-sq" onclick="addCard(event, ${index}, 'red')" title="Vermelho">${player.redCards > 0 ? player.redCards : '🟥'}</button>
+                </div>
+                <span class="tile-status-badge">${player.isOnField ? 'EM CAMPO' : 'BANCO'} (${player.substitutionsCount})</span>
+            </div>
         `;
-        
-        container.appendChild(card);
+        container.appendChild(tile);
     });
 }
 
 function updateTimesOnly() {
     players.forEach((player, index) => {
-        const playElem = document.getElementById(`play-time-${index}`);
-        const restElem = document.getElementById(`rest-time-${index}`);
-        
-        if (playElem) playElem.innerText = formatTime(player.secondsPlayed);
-        if (restElem) restElem.innerText = formatTime(player.secondsRested);
+        const playEl = document.getElementById(`tile-play-${index}`);
+        const restEl = document.getElementById(`tile-rest-${index}`);
+        if (playEl && restEl) {
+            let totalPlayed = player.secondsPlayedP1 + player.secondsPlayedP2;
+            let totalRested = player.secondsRestedP1 + player.secondsRestedP2;
+            playEl.innerText = formatTime(totalPlayed);
+            restEl.innerText = formatTime(totalRested);
+        }
     });
 }
+
+// -------------------------------------------------------------
+// GRÁFICOS DESPORTIVOS (Chart.js)
+// -------------------------------------------------------------
+function initCharts() {
+    let ctxMin = document.getElementById('chartMinutes').getContext('2d');
+    chartMinutesInstance = new Chart(ctxMin, {
+        type: 'bar',
+        data: { labels: [], datasets: [{ label: 'Minutos em Jogo', data: [], backgroundColor: '#00ffcc' }] },
+        options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true, ticks: { color: '#aaa' } }, x: { ticks: { color: '#aaa', font: { size: 10 } } } } }
+    });
+
+    let ctxShots = document.getElementById('chartShots').getContext('2d');
+    chartShotsInstance = new Chart(ctxShots, {
+        type: 'bar',
+        data: { labels: ['Casa', 'Visitante'], datasets: [{ label: 'Remates', data: [0,0], backgroundColor: '#ffcc00' }, { label: 'Golos', data: [0,0], backgroundColor: '#ff0055' }] },
+        options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true, ticks: { color: '#aaa' } }, x: { ticks: { color: '#aaa' } } } }
+    });
+
+    let ctxSubs = document.getElementById('chartSubs').getContext('2d');
+    chartSubsInstance = new Chart(ctxSubs, {
+        type: 'bar',
+        data: { labels: [], datasets: [{ label: 'Entradas (Subs)', data: [], backgroundColor: '#20c997' }] },
+        options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true, ticks: { color: '#aaa' } }, x: { ticks: { color: '#aaa', font: { size: 10 } } } } }
+    });
+}
+
+function updateChartsData() {
+    let labels = players.map(p => `#${p.number} ${p.name.split(' ')[0]}`);
+    let minutesData = players.map(p => ((p.secondsPlayedP1 + p.secondsPlayedP2) / 60).toFixed(1));
+    let subsData = players.map(p => p.substitutionsCount);
+
+    chartMinutesInstance.data.labels = labels;
+    chartMinutesInstance.data.datasets[0].data = minutesData;
+    chartMinutesInstance.update();
+
+    let homeName = document.getElementById('input-home-name').value || 'CASA';
+    let awayName = document.getElementById('input-away-name').value || 'VISITANTE';
+    chartShotsInstance.data.labels = [homeName, awayName];
+
+    let totalHomeRemates = statsData[1].home.remates + statsData[2].home.remates;
+    let totalAwayRemates = statsData[1].away.remates + statsData[2].away.remates;
+    let totalHomeGolos = statsData[1].home.golos + statsData[2].home.golos;
+    let totalAwayGolos = statsData[1].away.golos + statsData[2].away.golos;
+
+    chartShotsInstance.data.datasets[0].data = [totalHomeRemates, totalAwayRemates];
+    chartShotsInstance.data.datasets[1].data = [totalHomeGolos, totalAwayGolos];
+    chartShotsInstance.update();
+
+    chartSubsInstance.data.labels = labels;
+    chartSubsInstance.data.datasets[0].data = subsData;
+    chartSubsInstance.update();
+}
+
+// -------------------------------------------------------------
+// RELATÓRIOS (EXCEL E PDF COM CAPTURA DE AMBAS AS PARTES)
+// -------------------------------------------------------------
+function exportReportExcel() {
+    let homeName = document.getElementById('input-home-name').value || 'CASA';
+    let awayName = document.getElementById('input-away-name').value || 'VISITANTE';
+    let observations = document.getElementById('match-observations').value;
+
+    let wb = XLSX.utils.book_new();
+
+    let s1 = statsData[1];
+    let s2 = statsData[2];
+    let resumoData = [
+        ["Relatório Oficial - Análise Futsal PRO"],
+        ["Partida", `${homeName} ${homeGoals} - ${awayGoals} ${awayName}`],
+        ["Observações", observations],
+        [],
+        ["Estatísticas Coletivas", "1ª Parte (Casa)", "1ª Parte (Visitante)", "2ª Parte (Casa)", "2ª Parte (Visitante)", "Total (Casa)", "Total (Visitante)"],
+        ["Golos", s1.home.golos, s1.away.golos, s2.home.golos, s2.away.golos, s1.home.golos + s2.home.golos, s1.away.golos + s2.away.golos],
+        ["Remates", s1.home.remates, s1.away.remates, s2.home.remates, s2.away.remates, s1.home.remates + s2.home.remates, s1.away.remates + s2.away.remates],
+        ["Faltas/Livres", s1.home.livres, s1.away.livres, s2.home.livres, s2.away.livres, s1.home.livres + s2.home.livres, s1.away.livres + s2.away.livres],
+        ["Cantos", s1.home.cantos, s1.away.cantos, s2.home.cantos, s2.away.cantos, s1.home.cantos + s2.home.cantos, s1.away.cantos + s2.away.cantos],
+        ["Lançamentos", s1.home.lancamentos, s1.away.lancamentos, s2.home.lancamentos, s2.away.lancamentos, s1.home.lancamentos + s2.home.lancamentos, s1.away.lancamentos + s2.away.lancamentos],
+        ["Perdas de Posse", s1.home.posse, s1.away.posse, s2.home.posse, s2.away.posse, s1.home.posse + s2.home.posse, s1.away.posse + s2.away.posse],
+        ["Passes Falhados", s1.home.passes_falhados, s1.away.passes_falhados, s2.home.passes_falhados, s2.away.passes_falhados, s1.home.passes_falhados + s2.home.passes_falhados, s1.away.passes_falhados + s2.away.passes_falhados],
+        ["Passes Certos", s1.home.passes_completos, s1.away.passes_completos, s2.home.passes_completos, s2.away.passes_completos, s1.home.passes_completos + s2.home.passes_completos, s1.home.passes_completos + s2.home.passes_completos]
+    ];
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(resumoData), "Resumo");
+
+    let playersData = [[
+        "Número", "Nome do Jogador", 
+        "Jogo 1ªP", "Banco 1ªP", 
+        "Jogo 2ªP", "Banco 2ªP", 
+        "Tempo Total Jogo", "Tempo Total Banco", 
+        "Entradas", "Amarelos", "Vermelhos"
+    ]];
+    players.forEach(p => {
+        let totJ = p.secondsPlayedP1 + p.secondsPlayedP2;
+        let totB = p.secondsRestedP1 + p.secondsRestedP2;
+        playersData.push([
+            p.number, p.name, 
+            formatTime(p.secondsPlayedP1), formatTime(p.secondsRestedP1), 
+            formatTime(p.secondsPlayedP2), formatTime(p.secondsRestedP2), 
+            formatTime(totJ), formatTime(totB), 
+            p.substitutionsCount, p.yellowCards, p.redCards
+        ]);
+    });
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(playersData), "Plantel");
+
+    let acoes1 = [["Período", "Tempo", "Equipa", "Ação / Evento"]];
+    actionLogsHistory[1].forEach(l => acoes1.push([l.periodo, l.tempo, l.equipa, l.acao]));
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(acoes1), "1ª Parte");
+
+    let acoes2 = [["Período", "Tempo", "Equipa", "Ação / Evento"]];
+    actionLogsHistory[2].forEach(l => acoes2.push([l.periodo, l.tempo, l.equipa, l.acao]));
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(acoes2), "2ª Parte");
+
+    XLSX.writeFile(wb, `Relatorio_PRO_${homeName}_vs_${awayName}.xlsx`);
+}
+
+async function exportReportPDF() {
+    const { jsPDF } = window.jspdf;
+    let doc = new jsPDF();
+
+    let homeName = document.getElementById('input-home-name').value || 'CASA';
+    let awayName = document.getElementById('input-away-name').value || 'VISITANTE';
+    let observations = document.getElementById('match-observations').value;
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(16);
+    doc.text("Relatório Oficial - Análise Futsal PRO", 14, 18);
+
+    doc.setFontSize(11);
+    doc.text(`Partida: ${homeName} ${homeGoals} - ${awayGoals} ${awayName}`, 14, 26);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+    doc.text(`Gerado em: ${new Date().toLocaleDateString()} | andrepe @ 2026`, 14, 32);
+
+    let y = 40;
+    if (observations) {
+        doc.setFont("helvetica", "bold");
+        doc.text("Observações:", 14, y);
+        y += 5;
+        doc.setFont("helvetica", "normal");
+        doc.text(observations, 14, y, { maxWidth: 180 });
+        y += 12;
+    }
+
+    let s1 = statsData[1];
+    let s2 = statsData[2];
+
+    doc.setFont("helvetica", "bold");
+    doc.text("Resumo Coletivo (1ª Parte | 2ª Parte | Total):", 14, y);
+    y += 6;
+    doc.setFont("helvetica", "normal");
+    doc.text(`- Golos: Casa (${s1.home.golos}|${s2.home.golos}|${s1.home.golos+s2.home.golos}) x Visitante (${s1.away.golos}|${s2.away.golos}|${s1.away.golos+s2.away.golos})`, 14, y); y += 5;
+    doc.text(`- Faltas/Livres: Casa (${s1.home.livres}|${s2.home.livres}|${s1.home.livres+s2.home.livres}) x Visitante (${s1.away.livres}|${s2.away.livres}|${s1.away.livres+s2.away.livres})`, 14, y); y += 5;
+    doc.text(`- Cantos: Casa (${s1.home.cantos}|${s2.home.cantos}|${s1.home.cantos+s2.home.cantos}) x Visitante (${s1.away.cantos}|${s2.away.cantos}|${s1.away.cantos+s2.away.cantos})`, 14, y); y += 10;
+
+    doc.setFont("helvetica", "bold");
+    doc.text("Estatísticas de Atletas (1ªP / 2ªP / Total / Cartões):", 14, y);
+    y += 6;
+    doc.setFont("helvetica", "normal");
+
+    players.forEach(p => {
+        if (y > 280) { doc.addPage(); y = 20; }
+        let totJ = formatTime(p.secondsPlayedP1 + p.secondsPlayedP2);
+        doc.text(`Nº ${p.number} - ${p.name}: 1ªP[${formatTime(p.secondsPlayedP1)}] 2ªP[${formatTime(p.secondsPlayedP2)}] Tot[${totJ}] | Entradas[${p.substitutionsCount}] | 🟨${p.yellowCards} 🟥${p.redCards}`, 14, y);
+        y += 5;
+    });
+
+    y += 10;
+
+    // Criar container temporário invisível para renderizar os campos de ambas as partes no PDF
+    let tempContainer = document.createElement('div');
+    tempContainer.style.position = 'absolute';
+    tempContainer.style.left = '-9999px';
+    tempContainer.style.width = '600px';
+    tempContainer.style.background = '#1e1e1e';
+    tempContainer.style.padding = '10px';
+    document.body.appendChild(tempContainer);
+
+    let currentContainerHTML = document.getElementById('capture-pitch-container').innerHTML;
+    periodPitchHTML[currentPeriod] = currentContainerHTML;
+
+    // 1ª Parte
+    if (periodPitchHTML[1]) {
+        let div1 = document.createElement('div');
+        div1.innerHTML = `<h4 style="color:#00ffcc; margin:5px 0; font-size:12px;">Mapas de Lances - 1ª Parte</h4>` + periodPitchHTML[1];
+        tempContainer.appendChild(div1);
+    }
+    // 2ª Parte
+    if (periodPitchHTML[2]) {
+        let div2 = document.createElement('div');
+        div2.style.marginTop = '15px';
+        div2.innerHTML = `<h4 style="color:#00ffcc; margin:5px 0; font-size:12px;">Mapas de Lances - 2ª Parte</h4>` + periodPitchHTML[2];
+        tempContainer.appendChild(div2);
+    }
+
+    try {
+        let canvas = await html2canvas(tempContainer, { backgroundColor: '#1e1e1e', scale: 2, logging: false });
+        document.body.removeChild(tempContainer);
+
+        let imgData = canvas.toDataURL('image/png');
+        let imgWidth = 180;
+        let imgHeight = (canvas.height * imgWidth) / canvas.width;
+        
+        if (y + imgHeight > 280) { doc.addPage(); y = 20; }
+        doc.setFont("helvetica", "bold");
+        doc.text("Mapa de Lances / Remates e Golos (1ª e 2ª Parte):", 14, y);
+        y += 6;
+        doc.addImage(imgData, 'PNG', 14, y, imgWidth, imgHeight);
+        y += imgHeight + 10;
+    } catch (err) {
+        console.error("Erro ao capturar os campos para o PDF", err);
+        if (document.body.contains(tempContainer)) document.body.removeChild(tempContainer);
+    }
+
+    if (y > 260) { doc.addPage(); y = 20; }
+    doc.setFont("helvetica", "bold");
+    doc.text("Ocorrências - 1ª Parte:", 14, y);
+    y += 6;
+    doc.setFont("helvetica", "normal");
+    if (actionLogsHistory[1].length === 0) {
+        doc.text("Sem registos na 1ª parte.", 14, y);
+        y += 6;
+    } else {
+        actionLogsHistory[1].forEach(log => {
+            if (y > 280) { doc.addPage(); y = 20; }
+            doc.text(`[${log.tempo}] ${log.equipa}: ${log.acao}`, 14, y);
+            y += 5;
+        });
+    }
+
+    y += 5;
+    if (y > 260) { doc.addPage(); y = 20; }
+    doc.setFont("helvetica", "bold");
+    doc.text("Ocorrências - 2ª Parte:", 14, y);
+    y += 6;
+    doc.setFont("helvetica", "normal");
+    if (actionLogsHistory[2].length === 0) {
+        doc.text("Sem registos na 2ª parte.", 14, y);
+        y += 6;
+    } else {
+        actionLogsHistory[2].forEach(log => {
+            if (y > 280) { doc.addPage(); y = 20; }
+            doc.text(`[${log.tempo}] ${log.equipa}: ${log.acao}`, 14, y);
+            y += 5;
+        });
+    }
+
+    doc.save(`Relatorio_PRO_${homeName}_vs_${awayName}.pdf`);
 }
