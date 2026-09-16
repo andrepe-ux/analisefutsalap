@@ -1,13 +1,31 @@
-// app.js (Atualizado com a contagem de entradas e saídas por atleta)
+// app.js - Análise Futsal PRO
+let loggedInUsername = "Treinador";
 let currentPeriod = 1;
-let totalSeconds = 20 * 60;
+let periodDurationMinutes = 20;
+let totalSeconds = periodDurationMinutes * 60;
 let timerInterval = null;
 let isRunning = false;
 
 let homeGoals = 0;
 let awayGoals = 0;
 
-let actionLogsHistory = [];
+// Temporizador de Exclusão (Vermelho - 120 segundos) - Apenas para a Equipa da Casa
+let redCardSecondsRemaining = 0;
+let redCardActive = false;
+
+// Contagem de Cartões da Equipa Visitante
+let awayYellowCards = 0;
+let awayRedCards = 0;
+
+let actionLogsHistory = {
+    1: [],
+    2: []
+};
+
+let periodPitchHTML = {
+    1: null,
+    2: null
+};
 
 let timeoutsUsed = {
     1: { home: false, away: false },
@@ -15,30 +33,56 @@ let timeoutsUsed = {
 };
 
 let statsData = {
-    home: { livres: 0, cantos: 0, lancamentos: 0, posse: 0, passes_falhados: 0, passes_completos: 0 },
-    away: { livres: 0, cantos: 0, lancamentos: 0, posse: 0, passes_falhados: 0, passes_completos: 0 }
+    1: {
+        home: { livres: 0, cantos: 0, lancamentos: 0, remates: 0, golos: 0 },
+        away: { livres: 0, cantos: 0, lancamentos: 0, remates: 0, golos: 0 }
+    },
+    2: {
+        home: { livres: 0, cantos: 0, lancamentos: 0, remates: 0, golos: 0 },
+        away: { livres: 0, cantos: 0, lancamentos: 0, remates: 0, golos: 0 }
+    }
 };
 
 let players = [];
-for (let i = 1; i <= 16; i++) {
-    players.push({
-        number: i,
-        name: `Player ${i}`,
-        isOnField: false,
-        secondsPlayed: 0,
-        secondsRested: 0,
-        substitutionsCount: 0 // Contagem de vezes que entra em campo
-    });
-}
+let pendingPitchAction = null;
 
-window.onload = function() {
+let chartMinutesInstance = null;
+let chartShotsInstance = null;
+let chartSubsInstance = null;
+
+window.initAppAfterLogin = function() {
+    let savedData = localStorage.getItem('futsal_session_data');
+    if (savedData) {
+        try {
+            let parsedSession = JSON.parse(savedData);
+            if (parsedSession.username) loggedInUsername = parsedSession.username;
+        } catch(e) {}
+    }
+
     renderPlayersList();
     updateTimerDisplay();
     updateTimeoutUI();
+    updateFoulsUI();
+    updateStatsDisplay();
+    initCharts();
 };
 
+function switchLeftTab(tabName) {
+    document.querySelectorAll('.btn-tab').forEach(btn => btn.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(tab => tab.classList.remove('active'));
+
+    if (tabName === 'plantel') {
+        document.querySelector('.btn-tab:nth-child(1)').classList.add('active');
+        document.getElementById('tab-plantel').classList.add('active');
+    } else if (tabName === 'graficos') {
+        document.querySelector('.btn-tab:nth-child(2)').classList.add('active');
+        document.getElementById('tab-graficos').classList.add('active');
+        updateChartsData();
+    }
+}
+
 function updateTeamNames() {
-    let homeName = document.getElementById('input-home-name').value || 'CASA';
+    let homeName = document.getElementById('input-home-name').value || 'DINAMO';
     let awayName = document.getElementById('input-away-name').value || 'VISITANTE';
 
     document.getElementById('home-team-title').innerText = `Plantel / Jogadores (${homeName.toUpperCase()})`;
@@ -48,27 +92,47 @@ function updateTeamNames() {
     document.getElementById('to-home-label').innerText = `Time-out ${homeName}:`;
     document.getElementById('to-away-label').innerText = `Time-out ${awayName}:`;
 
+    document.getElementById('sb-home-label').innerText = homeName.toUpperCase();
+    document.getElementById('sb-away-label').innerText = awayName.toUpperCase();
+
     document.getElementById('pitch-remate-home-title').innerText = `REMATE ${homeName.toUpperCase()}`;
     document.getElementById('pitch-remate-away-title').innerText = `REMATE ${awayName.toUpperCase()}`;
-    document.getElementById('pitch-golo-home-title').innerHTML = `GOLO ${homeName.toUpperCase()} (<span id="home-score">${homeGoals}</span>)`;
-    document.getElementById('pitch-golo-away-title').innerHTML = `GOLO ${awayName.toUpperCase()} (<span id="away-score">${awayGoals}</span>)`;
+    document.getElementById('pitch-golo-home-title').innerText = `GOLO ${homeName.toUpperCase()}`;
+    document.getElementById('pitch-golo-away-title').innerText = `GOLO ${awayName.toUpperCase()}`;
+}
+
+function changeTimerDuration() {
+    if (isRunning) return;
+    let inputVal = parseInt(document.getElementById('timer-duration').value);
+    if (!isNaN(inputVal) && inputVal > 0) {
+        periodDurationMinutes = inputVal;
+        totalSeconds = periodDurationMinutes * 60;
+        updateTimerDisplay();
+    }
 }
 
 // -------------------------------------------------------------
-// GESTÃO DE SESSÃO EM JSON (Guardar e Importar)
+// SESSÃO JSON & OFFLINE SUPPORT
 // -------------------------------------------------------------
 function exportSessionJSON() {
     let sessionData = {
+        version: "PRO",
+        username: loggedInUsername,
         currentPeriod: currentPeriod,
+        periodDurationMinutes: periodDurationMinutes,
         totalSeconds: totalSeconds,
         homeGoals: homeGoals,
         awayGoals: awayGoals,
         homeName: document.getElementById('input-home-name').value,
         awayName: document.getElementById('input-away-name').value,
+        observations: document.getElementById('match-observations').value,
         timeoutsUsed: timeoutsUsed,
         statsData: statsData,
         players: players,
+        awayYellowCards: awayYellowCards,
+        awayRedCards: awayRedCards,
         actionLogsHistory: actionLogsHistory,
+        periodPitchHTML: periodPitchHTML,
         htmlLogs: document.getElementById('action-log').innerHTML,
         pitchMarkers: {
             homeShot: document.getElementById('pitch-shot-home').innerHTML,
@@ -81,7 +145,7 @@ function exportSessionJSON() {
     let dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(sessionData, null, 2));
     let downloadAnchor = document.createElement('a');
     downloadAnchor.setAttribute("href", dataStr);
-    downloadAnchor.setAttribute("download", `sessao_futsal_${sessionData.homeName}_vs_${sessionData.awayName}.json`);
+    downloadAnchor.setAttribute("download", `sessao_futsal_pro_${sessionData.homeName}_vs_${sessionData.awayName}.json`);
     document.body.appendChild(downloadAnchor);
     downloadAnchor.click();
     downloadAnchor.remove();
@@ -95,23 +159,31 @@ function importSessionJSON(event) {
     reader.onload = function(e) {
         try {
             let sessionData = JSON.parse(e.target.result);
-
             pauseTimer();
+            loggedInUsername = sessionData.username || "Treinador";
             currentPeriod = sessionData.currentPeriod || 1;
-            totalSeconds = sessionData.totalSeconds || (20 * 60);
+            periodDurationMinutes = sessionData.periodDurationMinutes || 20;
+            document.getElementById('timer-duration').value = periodDurationMinutes;
+            totalSeconds = sessionData.totalSeconds || (periodDurationMinutes * 60);
             homeGoals = sessionData.homeGoals || 0;
             awayGoals = sessionData.awayGoals || 0;
 
-            document.getElementById('input-home-name').value = sessionData.homeName || 'CASA';
+            document.getElementById('input-home-name').value = sessionData.homeName || 'DINAMO';
             document.getElementById('input-away-name').value = sessionData.awayName || 'VISITANTE';
+            document.getElementById('match-observations').value = sessionData.observations || '';
             
-            timeoutsUsed = sessionData.timeoutsUsed || { 1: { home: false, away: false }, 2: { home: false, away: false } };
+            timeoutsUsed = sessionData.timeoutsUsed || timeoutsUsed;
             statsData = sessionData.statsData || statsData;
             players = sessionData.players || players;
-            actionLogsHistory = sessionData.actionLogsHistory || [];
+            awayYellowCards = sessionData.awayYellowCards || 0;
+            awayRedCards = sessionData.awayRedCards || 0;
+            actionLogsHistory = sessionData.actionLogsHistory || { 1: [], 2: [] };
+            periodPitchHTML = sessionData.periodPitchHTML || { 1: null, 2: null };
 
-            document.getElementById('home-score').innerText = homeGoals;
-            document.getElementById('away-score').innerText = awayGoals;
+            document.getElementById('sb-home-goals').innerText = homeGoals;
+            document.getElementById('sb-away-goals').innerText = awayGoals;
+            document.getElementById('away-yellow-count').innerText = awayYellowCards;
+            document.getElementById('away-red-count').innerText = awayRedCards;
             document.getElementById('action-log').innerHTML = sessionData.htmlLogs || '';
 
             if (sessionData.pitchMarkers) {
@@ -124,21 +196,21 @@ function importSessionJSON(event) {
             document.getElementById('btn-p1').className = currentPeriod === 1 ? 'period-btn active' : 'period-btn';
             document.getElementById('btn-p2').className = currentPeriod === 2 ? 'period-btn active' : 'period-btn';
 
-            for (let t of ['home', 'away']) {
-                for (let k in statsData[t]) {
-                    let el = document.getElementById(`${t}-${k}`);
-                    if (el) el.innerText = statsData[t][k];
-                }
-            }
+            document.getElementById('login-screen').style.display = 'none';
+            document.getElementById('setup-game-screen').style.display = 'none';
+            document.getElementById('roster-select-modal').style.display = 'none';
+            document.getElementById('main-app').style.display = 'flex';
 
             updateTeamNames();
             updateTimerDisplay();
             updateTimeoutUI();
+            updateFoulsUI();
+            updateStatsDisplay();
             renderPlayersList();
 
-            alert("Sessão recuperada com sucesso!");
+            alert("Sessão PRO recuperada com sucesso! Aplicação pronta para funcionar offline.");
         } catch (err) {
-            alert("Erro ao ler o ficheiro JSON. Certifique-se de que é um ficheiro de sessão válido.");
+            alert("Erro ao ler o ficheiro JSON.");
             console.error(err);
         }
     };
@@ -146,79 +218,32 @@ function importSessionJSON(event) {
 }
 
 // -------------------------------------------------------------
-// MODELO E IMPORTAÇÃO EXCEL
-// -------------------------------------------------------------
-function downloadTemplate() {
-    let templateData = [
-        ["Configuração da Partida", ""],
-        ["Equipa Casa", "CASA"],
-        ["Equipa Visitante", "VISITANTE"],
-        [],
-        ["Número (Coluna A)", "Nome do Atleta (Coluna B)"]
-    ];
-
-    for (let i = 1; i <= 16; i++) {
-        templateData.push([i, `Atleta ${i}`]);
-    }
-
-    let ws = XLSX.utils.aoa_to_sheet(templateData);
-    let wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Plantel e Equipas");
-    XLSX.writeFile(wb, "modelo_futsal_completo.xlsx");
-}
-
-function importExcel(event) {
-    let file = event.target.files[0];
-    if (!file) return;
-
-    let reader = new FileReader();
-    reader.onload = function(e) {
-        let data = new Uint8Array(e.target.result);
-        let workbook = XLSX.read(data, { type: 'array' });
-        let firstSheetName = workbook.SheetNames[0];
-        let worksheet = workbook.Sheets[firstSheetName];
-        let json = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
-
-        let importedPlayers = 0;
-
-        for (let i = 0; i < json.length; i++) {
-            let colA = json[i][0];
-            let colB = json[i][1];
-
-            if (colA && String(colA).toLowerCase().includes("equipa casa") && colB) {
-                document.getElementById('input-home-name').value = colB;
-            }
-            if (colA && String(colA).toLowerCase().includes("equipa visitante") && colB) {
-                document.getElementById('input-away-name').value = colB;
-            }
-
-            if (colA !== undefined && colB !== undefined && !isNaN(colA) && importedPlayers < 16) {
-                players[importedPlayers].number = colA;
-                players[importedPlayers].name = String(colB).trim();
-                importedPlayers++;
-            }
-        }
-
-        updateTeamNames();
-        renderPlayersList();
-        alert(`Importação concluída com sucesso! ${importedPlayers} atletas carregados.`);
-    };
-    reader.readAsArrayBuffer(file);
-}
-
-// -------------------------------------------------------------
 // CRONÓMETRO E PERÍODOS
 // -------------------------------------------------------------
 function switchPeriod(period) {
     pauseTimer();
+    
+    periodPitchHTML[currentPeriod] = document.getElementById('capture-pitch-container').innerHTML;
+
     currentPeriod = period;
-    totalSeconds = 20 * 60;
+    totalSeconds = periodDurationMinutes * 60;
     
     document.getElementById('btn-p1').className = period === 1 ? 'period-btn active' : 'period-btn';
     document.getElementById('btn-p2').className = period === 2 ? 'period-btn active' : 'period-btn';
     
+    if (periodPitchHTML[period]) {
+        document.getElementById('capture-pitch-container').innerHTML = periodPitchHTML[period];
+    } else {
+        document.getElementById('pitch-shot-home').innerHTML = '<div class="goal-semicircle-only"></div>';
+        document.getElementById('pitch-shot-away').innerHTML = '<div class="goal-semicircle-only top-goal"></div>';
+        document.getElementById('pitch-goal-home').innerHTML = '<div class="goal-semicircle-only"></div>';
+        document.getElementById('pitch-goal-away').innerHTML = '<div class="goal-semicircle-only top-goal"></div>';
+    }
+
     updateTimerDisplay();
     updateTimeoutUI();
+    updateFoulsUI();
+    updateStatsDisplay();
     logAction('SISTEMA', `Início do ${period}º Período`, null, null);
 }
 
@@ -237,14 +262,25 @@ function startTimer() {
                 totalSeconds--;
                 updateTimerDisplay();
 
+                if (redCardActive && redCardSecondsRemaining > 0) {
+                    redCardSecondsRemaining--;
+                    updateRedCardTimerDisplay();
+                    if (redCardSecondsRemaining <= 0) {
+                        redCardActive = false;
+                        document.getElementById('red-card-timer-box').style.display = 'none';
+                        logAction('SISTEMA', 'Terminou o tempo de exclusão de 2 min.', null, null);
+                    }
+                }
+
                 players.forEach(player => {
                     if (player.isOnField) {
-                        player.secondsPlayed++;
+                        if (currentPeriod === 1) player.secondsPlayedP1++;
+                        else player.secondsPlayedP2++;
                     } else {
-                        player.secondsRested++;
+                        if (currentPeriod === 1) player.secondsRestedP1++;
+                        else player.secondsRestedP2++;
                     }
                 });
-
                 updateTimesOnly();
             } else {
                 pauseTimer();
@@ -259,10 +295,31 @@ function pauseTimer() {
     clearInterval(timerInterval);
 }
 
-function resetTimer() {
-    pauseTimer();
-    totalSeconds = 20 * 60;
+function adjustTimerSeconds(delta) {
+    if (isRunning) {
+        alert("O ajuste fino do cronómetro só funciona com o relógio parado!");
+        return;
+    }
+    totalSeconds += delta;
+    if (totalSeconds < 0) totalSeconds = 0;
+    let maxSeconds = periodDurationMinutes * 60;
+    if (totalSeconds > maxSeconds) totalSeconds = maxSeconds;
     updateTimerDisplay();
+    logAction('SISTEMA', `Ajuste fino de cronómetro (${delta > 0 ? '+' + delta + 's' : delta + 's'})`, null, null);
+}
+
+function triggerRedCardExclusion() {
+    redCardSecondsRemaining = 120; // 2 minutos
+    redCardActive = true;
+    document.getElementById('red-card-timer-box').style.display = 'block';
+    updateRedCardTimerDisplay();
+}
+
+function updateRedCardTimerDisplay() {
+    let mins = Math.floor(redCardSecondsRemaining / 60);
+    let secs = redCardSecondsRemaining % 60;
+    document.getElementById('red-card-timer-text').innerText = 
+        `🟥 EXCLUSÃO: ${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
 }
 
 function requestTimeout(team) {
@@ -270,10 +327,10 @@ function requestTimeout(team) {
         timeoutsUsed[currentPeriod][team] = true;
         updateTimeoutUI();
         pauseTimer();
-        let teamName = team === 'home' ? (document.getElementById('input-home-name').value || 'CASA') : (document.getElementById('input-away-name').value || 'VISITANTE');
+        let teamName = team === 'home' ? (document.getElementById('input-home-name').value || 'DINAMO') : (document.getElementById('input-away-name').value || 'VISITANTE');
         logAction(teamName.toUpperCase(), `Time-out pedido no ${currentPeriod}º Período`, null, null);
     } else {
-        alert("Esta equipa já utilizou a pausa técnica neste período!");
+        alert(" Esta equipa já utilizou a pausa técnica neste período!");
     }
 }
 
@@ -289,57 +346,343 @@ function updateTimeoutUI() {
     document.getElementById('timeout-away-btn').disabled = awayUsed;
 }
 
+function updateFoulsUI() {
+    let homeFouls = statsData[currentPeriod].home.livres;
+    let awayFouls = statsData[currentPeriod].away.livres;
+
+    let homeFoulsEl = document.getElementById('sb-home-fouls');
+    let awayFoulsEl = document.getElementById('sb-away-fouls');
+
+    homeFoulsEl.innerText = `Faltas: ${homeFouls}/5`;
+    awayFoulsEl.innerText = `Faltas: ${awayFouls}/5`;
+
+    if (homeFouls >= 5) {
+        homeFoulsEl.className = 'sb-team-fouls danger';
+        homeFoulsEl.innerText = `⚠️ LIMP/5 FALTAS`;
+    } else if (homeFouls === 4) {
+        homeFoulsEl.className = 'sb-team-fouls warning';
+        homeFoulsEl.innerText = `⚠️ 4ª FALTA (AVISO)`;
+    } else {
+        homeFoulsEl.className = 'sb-team-fouls';
+    }
+
+    if (awayFouls >= 5) {
+        awayFoulsEl.className = 'sb-team-fouls danger';
+        awayFoulsEl.innerText = `⚠️ LIMP/5 FALTAS`;
+    } else if (awayFouls === 4) {
+        awayFoulsEl.className = 'sb-team-fouls warning';
+        awayFoulsEl.innerText = `⚠️ 4ª FALTA (AVISO)`;
+    } else {
+        awayFoulsEl.className = 'sb-team-fouls';
+    }
+}
+
+function updateStatsDisplay() {
+    let curStats = statsData[currentPeriod];
+    for (let t of ['home', 'away']) {
+        for (let k in curStats[t]) {
+            let el = document.getElementById(`${t}-${k}`);
+            if (el) el.innerText = curStats[t][k];
+        }
+    }
+}
+
 // -------------------------------------------------------------
-// REGISTOS NOS CAMPOS E ESTATÍSTICAS
+// GESTÃO DE JOGADORES E CARTÕES
 // -------------------------------------------------------------
-function handlePitchDoubleClick(event, team, type) {
+function togglePlayerField(index) {
+    let player = players[index];
+    
+    if (player.redCards > 0 && !player.isOnField) {
+        alert("Atenção: Este jogador foi expulso (cartão vermelho) e não pode voltar a entrar no jogo!");
+        return;
+    }
+
+    let currentFieldCount = players.filter(p => p.isOnField).length;
+
+    if (!player.isOnField) {
+        if (redCardActive && currentFieldCount >= 4) {
+            alert("Atenção: A penalização de 2 minutos ainda está a decorrer. Só podes colocar um jogador em campo quando o tempo terminar ou se sofrerem um golo!");
+            return;
+        }
+        if (currentFieldCount >= 5) {
+            alert("Erro: No máximo podem estar 5 jogadores em campo!");
+            return;
+        }
+        player.isOnField = true;
+        player.substitutionsCount++;
+    } else {
+        if (currentFieldCount <= 3) {
+            alert("Erro: É obrigatório ter no mínimo 3 jogadores em campo!");
+            return;
+        }
+        player.isOnField = false;
+    }
+    renderPlayersList();
+}
+
+function updatePlayerNumber(index, newNum) { players[index].number = newNum; }
+function updatePlayerName(index, newName) { players[index].name = newName; }
+
+function addCard(event, index, cardType) {
+    event.stopPropagation();
+    let player = players[index];
+    let teamName = document.getElementById('input-home-name').value || 'DINAMO';
+    
+    if (cardType === 'yellow') {
+        player.yellowCards++;
+        logAction(teamName.toUpperCase(), `Cartão Amarelo: #${player.number} ${player.name}`, null, null);
+        
+        if (player.yellowCards >= 2) {
+            player.redCards++;
+            if (player.isOnField) {
+                let fieldCount = players.filter(p => p.isOnField).length;
+                if (fieldCount <= 3) {
+                    alert("Atenção: O atleta atingiu o 2º amarelo, mas a equipa ficaria com menos de 3 jogadores em campo!");
+                    player.yellowCards--;
+                    player.redCards--;
+                    return;
+                }
+                player.isOnField = false;
+            }
+            triggerRedCardExclusion();
+            logAction(teamName.toUpperCase(), `🟥 2º Amarelo (Vermelho / Exclusão 2 min): #${player.number} ${player.name}`, null, null);
+        }
+    } else if (cardType === 'red') {
+        player.redCards++;
+        if (player.isOnField) {
+            let fieldCount = players.filter(p => p.isOnField).length;
+            if (fieldCount <= 3) {
+                alert("Não podes expulsar este jogador em campo pois ficarias com menos de 3 atletas!");
+                player.redCards--;
+                return;
+            }
+            player.isOnField = false;
+        }
+        triggerRedCardExclusion();
+        logAction(teamName.toUpperCase(), `Cartão Vermelho Direto (Exclusão 2 min): #${player.number} ${player.name}`, null, null);
+    }
+    renderPlayersList();
+}
+
+function addAwayCard(cardType) {
+    let awayName = document.getElementById('input-away-name').value || 'VISITANTE';
+    if (cardType === 'yellow') {
+        awayYellowCards++;
+        document.getElementById('away-yellow-count').innerText = awayYellowCards;
+        logAction(awayName.toUpperCase(), `🟨 Cartão Amarelo (Adversário)`, null, null);
+    } else if (cardType === 'red') {
+        awayRedCards++;
+        document.getElementById('away-red-count').innerText = awayRedCards;
+        logAction(awayName.toUpperCase(), `🟥 Cartão Vermelho (Adversário)`, null, null);
+    }
+}
+
+function correctCardValue(event, index, cardType, delta) {
+    event.stopPropagation();
+    let player = players[index];
+    let teamName = document.getElementById('input-home-name').value || 'DINAMO';
+
+    if (cardType === 'yellow') {
+        player.yellowCards += delta;
+        if (player.yellowCards < 0) player.yellowCards = 0;
+        logAction(teamName.toUpperCase(), `Correção Cartão Amarelo (${delta > 0 ? '+1' : '-1'}): #${player.number} ${player.name}`, null, null);
+    } else if (cardType === 'red') {
+        let prevRed = player.redCards;
+        player.redCards += delta;
+        if (player.redCards < 0) player.redCards = 0;
+        
+        if (prevRed > 0 && player.redCards === 0) {
+            redCardActive = false;
+            redCardSecondsRemaining = 0;
+            let timerBox = document.getElementById('red-card-timer-box');
+            if (timerBox) timerBox.style.display = 'none';
+            logAction('SISTEMA', `Cartão Vermelho anulado para #${player.number} ${player.name} - Exclusão de 2 min cancelada`, null, null);
+        }
+
+        logAction(teamName.toUpperCase(), `Correção Cartão Vermelho (${delta > 0 ? '+1' : '-1'}): #${player.number} ${player.name}`, null, null);
+    }
+    renderPlayersList();
+}
+
+function correctStatValue(category, delta) {
+    let teamKey = category.includes('home') ? 'home' : 'away';
+    if (category.includes('goals')) {
+        let pitchId = teamKey === 'home' ? 'pitch-goal-home' : 'pitch-goal-away';
+        if (teamKey === 'home') {
+            homeGoals += delta;
+            if (homeGoals < 0) homeGoals = 0;
+            document.getElementById('sb-home-goals').innerText = homeGoals;
+            statsData[currentPeriod].home.golos = homeGoals;
+        } else {
+            awayGoals += delta;
+            if (awayGoals < 0) awayGoals = 0;
+            document.getElementById('sb-away-goals').innerText = awayGoals;
+            statsData[currentPeriod].away.golos = awayGoals;
+        }
+
+        if (delta < 0) {
+            let pitchEl = document.getElementById(pitchId);
+            if (pitchEl) {
+                let markers = pitchEl.querySelectorAll('.pitch-marker');
+                if (markers.length > 0) {
+                    markers[markers.length - 1].remove();
+                }
+            }
+        }
+    }
+    updateStatsDisplay();
+    logAction('SISTEMA', `Correção de Placar/Golos (${category}: ${delta > 0 ? '+' + delta : delta})`, null, null);
+}
+
+function modifyPitchStat(teamKey, statType, delta) {
+    let pitchId = '';
+    if (statType === 'goal') {
+        pitchId = teamKey === 'home' ? 'pitch-goal-home' : 'pitch-goal-away';
+        statsData[currentPeriod][teamKey].golos += delta;
+        if (statsData[currentPeriod][teamKey].golos < 0) statsData[currentPeriod][teamKey].golos = 0;
+        
+        if (teamKey === 'home') {
+            homeGoals += delta;
+            if (homeGoals < 0) homeGoals = 0;
+            document.getElementById('sb-home-goals').innerText = homeGoals;
+        } else {
+            awayGoals += delta;
+            if (awayGoals < 0) awayGoals = 0;
+            document.getElementById('sb-away-goals').innerText = awayGoals;
+        }
+    } else if (statType === 'shot') {
+        pitchId = teamKey === 'home' ? 'pitch-shot-home' : 'pitch-shot-away';
+        statsData[currentPeriod][teamKey].remates += delta;
+        if (statsData[currentPeriod][teamKey].remates < 0) statsData[currentPeriod][teamKey].remates = 0;
+    }
+
+    if (delta < 0 && pitchId) {
+        let pitchEl = document.getElementById(pitchId);
+        if (pitchEl) {
+            let markers = pitchEl.querySelectorAll('.pitch-marker');
+            if (markers.length > 0) {
+                markers[markers.length - 1].remove();
+            }
+        }
+    }
+
+    updateStatsDisplay();
+    let teamName = teamKey === 'home' ? (document.getElementById('input-home-name').value || 'DINAMO') : (document.getElementById('input-away-name').value || 'VISITANTE');
+    logAction(teamName.toUpperCase(), `Correção manual em campo: ${statType.toUpperCase()} (${delta > 0 ? '+' + delta : delta})`, null, null);
+}
+
+function modifyStat(team, actionType, delta) {
+    statsData[currentPeriod][team][actionType] += delta;
+    if (statsData[currentPeriod][team][actionType] < 0) {
+        statsData[currentPeriod][team][actionType] = 0;
+        return;
+    }
+    
+    document.getElementById(`${team}-${actionType}`).innerText = statsData[currentPeriod][team][actionType];
+    
+    if (actionType === 'livres') {
+        updateFoulsUI();
+    }
+
+    let teamName = team === 'home' ? (document.getElementById('input-home-name').value || 'DINAMO') : (document.getElementById('input-away-name').value || 'VISITANTE');
+    let actionNames = {
+        livres: 'Falta/Livre',
+        cantos: 'Canto',
+        lancamentos: 'Lançamento'
+    };
+    
+    let sign = delta > 0 ? 'Registo' : 'Correção (-)';
+    logAction(teamName.toUpperCase(), `${actionNames[actionType]} (${sign})`, null, null);
+}
+
+// -------------------------------------------------------------
+// REGISTOS NOS CAMPOS
+// -------------------------------------------------------------
+function handlePitchDoubleClick(event, side, type) {
     const pitch = event.currentTarget;
     const rect = pitch.getBoundingClientRect();
     const x = ((event.clientX - rect.left) / rect.width) * 100;
     const y = ((event.clientY - rect.top) / rect.height) * 100;
 
+    let homeName = document.getElementById('input-home-name').value || 'DINAMO';
+    let awayName = document.getElementById('input-away-name').value || 'VISITANTE';
+    
+    let teamKey = side; 
+    let teamName = side === 'home' ? homeName : awayName;
+
+    if (side === 'home') {
+        let activePlayers = players.filter(p => p.isOnField);
+        if (activePlayers.length > 0) {
+            pendingPitchAction = { pitch, type, teamKey, teamName, x, y };
+            showPlayerSelectorModal(activePlayers);
+            return;
+        }
+    }
+
     addMarker(pitch, x, y, type);
+    finalizePitchAction(type, teamKey, teamName, x, y, '');
+}
 
-    let teamName = team === 'home' ? (document.getElementById('input-home-name').value || 'CASA') : (document.getElementById('input-away-name').value || 'VISITANTE');
+function showPlayerSelectorModal(activePlayers) {
+    let grid = document.getElementById('modal-players-grid');
+    grid.innerHTML = '';
+    activePlayers.forEach(p => {
+        let btn = document.createElement('button');
+        btn.className = 'mini-player-badge';
+        btn.innerText = `#${p.number}`;
+        btn.title = p.name;
+        btn.onclick = function() {
+            addMarker(pendingPitchAction.pitch, pendingPitchAction.x, pendingPitchAction.y, pendingPitchAction.type);
+            finalizePitchAction(pendingPitchAction.type, pendingPitchAction.teamKey, pendingPitchAction.teamName, pendingPitchAction.x, pendingPitchAction.y, ` (Atleta: #${p.number})`);
+            closePlayerModal(true);
+        };
+        grid.appendChild(btn);
+    });
+    document.getElementById('player-selector-modal').style.display = 'flex';
+}
 
+function closePlayerModal(confirmed = false) {
+    if (!confirmed && pendingPitchAction) {
+        addMarker(pendingPitchAction.pitch, pendingPitchAction.x, pendingPitchAction.y, pendingPitchAction.type);
+        finalizePitchAction(pendingPitchAction.type, pendingPitchAction.teamKey, pendingPitchAction.teamName, pendingPitchAction.x, pendingPitchAction.y, '');
+    }
+    document.getElementById('player-selector-modal').style.display = 'none';
+    pendingPitchAction = null;
+}
+
+function finalizePitchAction(type, teamKey, teamName, x, y, playerStr) {
     if (type === 'goal') {
-        if (team === 'home') {
+        statsData[currentPeriod][teamKey].golos++;
+        if (teamKey === 'home') {
             homeGoals++;
-            document.getElementById('home-score').innerText = homeGoals;
+            document.getElementById('sb-home-goals').innerText = homeGoals;
         } else {
             awayGoals++;
-            document.getElementById('away-score').innerText = awayGoals;
+            document.getElementById('sb-away-goals').innerText = awayGoals;
         }
-        logAction(teamName.toUpperCase(), `GOLO (${currentPeriod}ºP)`, x.toFixed(0), y.toFixed(0));
+        
+        if (redCardActive && teamKey === 'home') {
+            redCardActive = false;
+            redCardSecondsRemaining = 0;
+            document.getElementById('red-card-timer-box').style.display = 'none';
+            logAction('SISTEMA', 'Exclusão de 2 min cancelada por golo sofrido', null, null);
+        }
+
+        logAction(teamName.toUpperCase(), `GOLO (${currentPeriod}ºP)${playerStr}`, x.toFixed(0), y.toFixed(0));
     } else {
-        logAction(teamName.toUpperCase(), `Remate (${currentPeriod}ºP)`, x.toFixed(0), y.toFixed(0));
+        statsData[currentPeriod][teamKey].remates++;
+        logAction(teamName.toUpperCase(), `Remate (${currentPeriod}ºP)${playerStr}`, x.toFixed(0), y.toFixed(0));
     }
 }
 
 function addMarker(pitchElement, xPercent, yPercent, type) {
     const marker = document.createElement('div');
-    marker.className = `pitch-marker ${type === 'goal' ? 'marker-goal' : 'marker-shot'}`;
+    let periodClass = currentPeriod === 1 ? 'marker-p1' : 'marker-p2';
+    marker.className = `pitch-marker ${type === 'goal' ? 'marker-goal' : 'marker-shot'} ${periodClass}`;
     marker.style.left = `${xPercent}%`;
     marker.style.top = `${yPercent}%`;
     pitchElement.appendChild(marker);
-}
-
-function recordStat(team, actionType) {
-    statsData[team][actionType]++;
-    document.getElementById(`${team}-${actionType}`).innerText = statsData[team][actionType];
-    
-    let teamName = team === 'home' ? (document.getElementById('input-home-name').value || 'CASA') : (document.getElementById('input-away-name').value || 'VISITANTE');
-    
-    let actionNames = {
-        livres: 'Falta/Livre',
-        cantos: 'Canto',
-        lancamentos: 'Lançamento',
-        posse: 'Perda de Posse',
-        passes_falhados: 'Passe Falhado',
-        passes_completos: 'Passe Certo'
-    };
-    
-    logAction(teamName.toUpperCase(), actionNames[actionType], null, null);
 }
 
 function logAction(teamName, actionDesc, coordX, coordY) {
@@ -351,175 +694,21 @@ function logAction(teamName, actionDesc, coordX, coordY) {
         fullDesc += ` [X: ${coordX}%, Y: ${coordY}%]`;
     }
 
-    actionLogsHistory.push({
+    let logEntry = {
         periodo: `${currentPeriod}ºP`,
         tempo: currentClock,
         equipa: teamName,
         acao: fullDesc,
         x: coordX,
         y: coordY
-    });
+    };
+
+    actionLogsHistory[currentPeriod].push(logEntry);
     
     let entry = document.createElement('div');
     entry.className = 'log-entry';
     entry.innerHTML = `[${currentPeriod}ºP - ${currentClock}] <b>${teamName}</b>: ${fullDesc}`;
-    
     logBox.insertBefore(entry, logBox.firstChild);
-}
-
-// -------------------------------------------------------------
-// RELATÓRIOS (EXCEL E PDF)
-// -------------------------------------------------------------
-function exportReportExcel() {
-    let homeName = document.getElementById('input-home-name').value || 'CASA';
-    let awayName = document.getElementById('input-away-name').value || 'VISITANTE';
-
-    let wb = XLSX.utils.book_new();
-
-    let resumoData = [
-        ["Relatório da Partida - Análise Futsal AP"],
-        ["Equipa Casa", homeName, "Golos", homeGoals],
-        ["Equipa Visitante", awayName, "Golos", awayGoals],
-        [],
-        ["Estatísticas", homeName, awayName],
-        ["Faltas/Livres", statsData.home.livres, statsData.away.livres],
-        ["Cantos", statsData.home.cantos, statsData.away.cantos],
-        ["Lançamentos", statsData.home.lancamentos, statsData.away.lancamentos],
-        ["Perdas de Posse", statsData.home.posse, statsData.away.posse],
-        ["Passes Falhados", statsData.home.passes_falhados, statsData.away.passes_falhados],
-        ["Passes Certos", statsData.home.passes_completos, statsData.away.passes_completos]
-    ];
-    let wsResumo = XLSX.utils.aoa_to_sheet(resumoData);
-    XLSX.utils.book_append_sheet(wb, wsResumo, "Resumo");
-
-    let acoesData = [["Período", "Tempo", "Equipa", "Ação / Evento", "Coord X (%)", "Coord Y (%)"]];
-    actionLogsHistory.forEach(log => {
-        acoesData.push([log.periodo, log.tempo, log.equipa, log.acao, log.x !== null ? log.x : '-', log.y !== null ? log.y : '-']);
-    });
-    let wsAcoes = XLSX.utils.aoa_to_sheet(acoesData);
-    XLSX.utils.book_append_sheet(wb, wsAcoes, "Eventos e Campos");
-
-    let playersData = [["Número", "Nome do Jogador", "Tempo em Jogo", "Tempo no Banco", "Nº de Entradas"]];
-    players.forEach(p => {
-        playersData.push([p.number, p.name, formatTime(p.secondsPlayed), formatTime(p.secondsRested), p.substitutionsCount]);
-    });
-    let wsPlayers = XLSX.utils.aoa_to_sheet(playersData);
-    XLSX.utils.book_append_sheet(wb, wsPlayers, "Plantel");
-
-    XLSX.writeFile(wb, `Relatorio_Futsal_${homeName}_vs_${awayName}.xlsx`);
-}
-
-async function exportReportPDF() {
-    const { jsPDF } = window.jspdf;
-    let doc = new jsPDF();
-
-    let homeName = document.getElementById('input-home-name').value || 'CASA';
-    let awayName = document.getElementById('input-away-name').value || 'VISITANTE';
-
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(16);
-    doc.text("Relatorio Oficial - Análise Futsal AP", 14, 20);
-
-    doc.setFontSize(12);
-    doc.text(`Partida: ${homeName} ${homeGoals} - ${awayGoals} ${awayName}`, 14, 30);
-
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(10);
-    doc.text(`Gerado em: ${new Date().toLocaleDateString()} por andrepe @ 2026`, 14, 38);
-
-    let y = 48;
-    doc.setFont("helvetica", "bold");
-    doc.text("Estatísticas Coletivas:", 14, y);
-    y += 6;
-    doc.setFont("helvetica", "normal");
-    doc.text(`- Faltas/Livres: ${homeName} (${statsData.home.livres}) x (${statsData.away.livres}) ${awayName}`, 14, y); y += 6;
-    doc.text(`- Cantos: ${homeName} (${statsData.home.cantos}) x (${statsData.away.cantos}) ${awayName}`, 14, y); y += 6;
-    doc.text(`- Perdas de Posse: ${homeName} (${statsData.home.posse}) x (${statsData.away.posse}) ${awayName}`, 14, y); y += 10;
-
-    // SECÇÃO DOS TEMPOS E ENTRADAS DOS JOGADORES NO PDF
-    doc.setFont("helvetica", "bold");
-    doc.text("Estatísticas dos Jogadores (Tempos e Entradas):", 14, y);
-    y += 6;
-    doc.setFont("helvetica", "normal");
-
-    players.forEach(p => {
-        if (y > 280) {
-            doc.addPage();
-            y = 20;
-        }
-        doc.text(`Nº ${p.number} - ${p.name}: Jogo [${formatTime(p.secondsPlayed)}] | Banco [${formatTime(p.secondsRested)}] | Entradas [${p.substitutionsCount}]`, 14, y);
-        y += 6;
-    });
-
-    y += 4;
-
-    // CAPTURA DOS CAMPOS DE FUTSAL PARA O PDF
-    doc.setFont("helvetica", "bold");
-    doc.text("Mapas Visuais dos Campos (Remates e Golos):", 14, y);
-    y += 6;
-
-    try {
-        let pitchContainer = document.querySelector('.pitch-container-grid');
-        let canvas = await html2canvas(pitchContainer, { backgroundColor: '#1e1e1e', scale: 2 });
-        let imgData = canvas.toDataURL('image/png');
-        
-        let imgWidth = 180;
-        let imgHeight = (canvas.height * imgWidth) / canvas.width;
-        
-        if (y + imgHeight > 280) {
-            doc.addPage();
-            y = 20;
-        }
-
-        doc.addImage(imgData, 'PNG', 14, y, imgWidth, imgHeight);
-        y += imgHeight + 10;
-    } catch (err) {
-        console.error("Erro ao capturar os campos para PDF", err);
-    }
-
-    if (y > 270) {
-        doc.addPage();
-        y = 20;
-    }
-
-    doc.setFont("helvetica", "bold");
-    doc.text("Histórico de Ações Detalhado:", 14, y);
-    y += 6;
-    doc.setFont("helvetica", "normal");
-
-    actionLogsHistory.forEach(log => {
-        if (y > 280) {
-            doc.addPage();
-            y = 20;
-        }
-        doc.text(`[${log.periodo} - ${log.tempo}] ${log.equipa}: ${log.acao}`, 14, y);
-        y += 6;
-    });
-
-    doc.save(`Relatorio_Futsal_${homeName}_vs_${awayName}.pdf`);
-}
-
-// -------------------------------------------------------------
-// GESTÃO DO PLANTEL
-// -------------------------------------------------------------
-function togglePlayerField(index) {
-    let player = players[index];
-    if (player) {
-        player.isOnField = !player.isOnField;
-        // Incrementa sempre que o atleta entra em campo (passa de falso para verdadeiro)
-        if (player.isOnField) {
-            player.substitutionsCount++;
-        }
-        renderPlayersList();
-    }
-}
-
-function updatePlayerNumber(index, newNum) {
-    players[index].number = newNum;
-}
-
-function updatePlayerName(index, newName) {
-    players[index].name = newName;
 }
 
 function formatTime(totalSecs) {
@@ -533,38 +722,303 @@ function renderPlayersList() {
     container.innerHTML = '';
 
     players.forEach((player, index) => {
-        let card = document.createElement('div');
-        card.className = `player-card ${player.isOnField ? 'field' : ''}`;
+        let tile = document.createElement('div');
+        tile.className = `player-card-tile ${player.isOnField ? 'field' : ''}`;
+        tile.onclick = function() { togglePlayerField(index); };
         
-        card.innerHTML = `
-            <input type="text" class="player-num-input" value="${player.number}" onchange="updatePlayerNumber(${index}, this.value)">
-            <input type="text" class="player-name-input" value="${player.name}" onchange="updatePlayerName(${index}, this.value)">
-            <div class="player-times-box">
-                <div class="time-item">
-                    <span class="time-label">Jogo</span>
-                    <span class="time-val play" id="play-time-${index}">${formatTime(player.secondsPlayed)}</span>
+        let totalPlayed = player.secondsPlayedP1 + player.secondsPlayedP2;
+        let totalRested = player.secondsRestedP1 + player.secondsRestedP2;
+
+        tile.innerHTML = `
+            <div class="tile-header">
+                <input type="text" class="player-num-input" value="${player.number}" onclick="event.stopPropagation()" onchange="updatePlayerNumber(${index}, this.value)">
+                <input type="text" class="player-name-input" value="${player.name}" onclick="event.stopPropagation()" onchange="updatePlayerName(${index}, this.value)">
+            </div>
+            <div class="tile-timers-box">
+                <div class="tile-timer-row">
+                    <span class="tile-time-label">Jogo:</span>
+                    <span class="tile-time-val play" id="tile-play-${index}">${formatTime(totalPlayed)}</span>
                 </div>
-                <div class="time-item">
-                    <span class="time-label">Banco</span>
-                    <span class="time-val rest" id="rest-time-${index}">${formatTime(player.secondsRested)}</span>
+                <div class="tile-timer-row">
+                    <span class="tile-time-label">Banco:</span>
+                    <span class="tile-time-val rest" id="tile-rest-${index}">${formatTime(totalRested)}</span>
                 </div>
             </div>
-            <button class="btn-card" onclick="togglePlayerField(${index})" style="background-color: ${player.isOnField ? '#b30000' : '#0073e6'};" title="Entradas: ${player.substitutionsCount}">
-                ${player.isOnField ? 'Sair' : 'Entrar'} (${player.substitutionsCount})
-            </button>
+            <div class="tile-footer">
+                <div class="tile-cards" onclick="event.stopPropagation()" style="display: flex; align-items: center; gap: 4px;">
+                    <button class="card-square yellow-sq big-card" onclick="addCard(event, ${index}, 'yellow')" title="Adicionar Amarelo">${player.yellowCards > 0 ? player.yellowCards : '🟨'}</button>
+                    ${player.yellowCards > 0 ? `<button class="btn-corr" onclick="correctCardValue(event, ${index}, 'yellow', -1)" title="Corrigir Amarelo">-</button>` : ''}
+                    
+                    <button class="card-square red-sq big-card" onclick="addCard(event, ${index}, 'red')" title="Adicionar Vermelho">${player.redCards > 0 ? player.redCards : '🟥'}</button>
+                    ${player.redCards > 0 ? `<button class="btn-corr" onclick="correctCardValue(event, ${index}, 'red', -1)" title="Corrigir Vermelho">-</button>` : ''}
+                </div>
+                <span class="tile-status-badge">${player.isOnField ? 'EM CAMPO' : 'BANCO'} (${player.substitutionsCount})</span>
+            </div>
         `;
-        
-        container.appendChild(card);
+        container.appendChild(tile);
     });
 }
 
 function updateTimesOnly() {
     players.forEach((player, index) => {
-        const playElem = document.getElementById(`play-time-${index}`);
-        const restElem = document.getElementById(`rest-time-${index}`);
-        
-        if (playElem) playElem.innerText = formatTime(player.secondsPlayed);
-        if (restElem) restElem.innerText = formatTime(player.secondsRested);
+        const playEl = document.getElementById(`tile-play-${index}`);
+        const restEl = document.getElementById(`tile-rest-${index}`);
+        if (playEl && restEl) {
+            let totalPlayed = player.secondsPlayedP1 + player.secondsPlayedP2;
+            let totalRested = player.secondsRestedP1 + player.secondsRestedP2;
+            playEl.innerText = formatTime(totalPlayed);
+            restEl.innerText = formatTime(totalRested);
+        }
     });
 }
+
+// -------------------------------------------------------------
+// GRÁFICOS DESPORTIVOS
+// -------------------------------------------------------------
+function initCharts() {
+    let ctxMin = document.getElementById('chartMinutes').getContext('2d');
+    chartMinutesInstance = new Chart(ctxMin, {
+        type: 'line',
+        data: { 
+            labels: [], 
+            datasets: [{ 
+                label: 'Minutos em Jogo', 
+                data: [], 
+                borderColor: '#00ffcc', 
+                backgroundColor: 'rgba(0, 255, 204, 0.15)', 
+                fill: true, 
+                tension: 0.3 
+            }] 
+        },
+        options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true, ticks: { color: '#aaa' } }, x: { ticks: { color: '#aaa', font: { size: 10 } } } } }
+    });
+
+    let ctxShots = document.getElementById('chartShots').getContext('2d');
+    chartShotsInstance = new Chart(ctxShots, {
+        type: 'bar',
+        data: { labels: ['Dinamo', 'Visitante'], datasets: [{ label: 'Remates', data: [0,0], backgroundColor: '#ffcc00' }, { label: 'Golos', data: [0,0], backgroundColor: '#ff0055' }] },
+        options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true, ticks: { color: '#aaa' } }, x: { ticks: { color: '#aaa' } } } }
+    });
+
+    let ctxSubs = document.getElementById('chartSubs').getContext('2d');
+    chartSubsInstance = new Chart(ctxSubs, {
+        type: 'bar',
+        data: { labels: [], datasets: [{ label: 'Entradas (Subs)', data: [], backgroundColor: '#20c997' }] },
+        options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true, ticks: { color: '#aaa' } }, x: { ticks: { color: '#aaa', font: { size: 10 } } } } }
+    });
+}
+
+function updateChartsData() {
+    let labels = players.map(p => `#${p.number} ${p.name.split(' ')[0]}`);
+    let minutesData = players.map(p => ((p.secondsPlayedP1 + p.secondsPlayedP2) / 60).toFixed(1));
+    let subsData = players.map(p => p.substitutionsCount);
+
+    chartMinutesInstance.data.labels = labels;
+    chartMinutesInstance.data.datasets[0].data = minutesData;
+    chartMinutesInstance.update();
+
+    let homeName = document.getElementById('input-home-name').value || 'DINAMO';
+    let awayName = document.getElementById('input-away-name').value || 'VISITANTE';
+    chartShotsInstance.data.labels = [homeName, awayName];
+
+    let totalHomeRemates = statsData[1].home.remates + statsData[2].home.remates;
+    let totalAwayRemates = statsData[1].away.remates + statsData[2].away.remates;
+    let totalHomeGolos = statsData[1].home.golos + statsData[2].home.golos;
+    let totalAwayGolos = statsData[1].away.golos + statsData[2].away.golos;
+
+    chartShotsInstance.data.datasets[0].data = [totalHomeRemates, totalAwayRemates];
+    chartShotsInstance.data.datasets[1].data = [totalHomeGolos, totalAwayGolos];
+    chartShotsInstance.update();
+
+    chartSubsInstance.data.labels = labels;
+    chartSubsInstance.data.datasets[0].data = subsData;
+    chartSubsInstance.update();
+}
+
+// -------------------------------------------------------------
+// RELATÓRIOS (EXCEL E PDF)
+// -------------------------------------------------------------
+function exportReportExcel() {
+    let homeName = document.getElementById('input-home-name').value || 'DINAMO';
+    let awayName = document.getElementById('input-away-name').value || 'VISITANTE';
+    let observations = document.getElementById('match-observations').value;
+
+    let wb = XLSX.utils.book_new();
+
+    let s1 = statsData[1];
+    let s2 = statsData[2];
+    let resumoData = [
+        ["Relatório Oficial - Análise Futsal PRO"],
+        ["Partida", `${homeName} ${homeGoals} - ${awayGoals} ${awayName}`],
+        ["Observações", observations],
+        [],
+        ["Estatísticas Coletivas", "1ª Parte (Dinamo)", "1ª Parte (Visitante)", "2ª Parte (Dinamo)", "2ª Parte (Visitante)", "Total (Dinamo)", "Total (Visitante)"],
+        ["Golos", s1.home.golos, s1.away.golos, s2.home.golos, s2.away.golos, s1.home.golos + s2.home.golos, s1.away.golos + s2.away.golos],
+        ["Remates", s1.home.remates, s1.away.remates, s2.home.remates, s2.away.remates, s1.home.remates + s2.home.remates, s1.away.remates + s2.away.remates],
+        ["Faltas", s1.home.livres, s1.away.livres, s2.home.livres, s2.away.livres, s1.home.livres + s2.home.livres, s1.away.livres + s2.away.livres],
+        ["Cantos", s1.home.cantos, s1.away.cantos, s2.home.cantos, s2.away.cantos, s1.home.cantos + s2.home.cantos, s1.away.cantos + s2.away.cantos],
+        ["Lançamentos", s1.home.lancamentos, s1.away.lancamentos, s2.home.lancamentos, s2.away.lancamentos, s1.home.lancamentos + s2.home.lancamentos, s1.away.lancamentos + s2.away.lancamentos]
+    ];
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(resumoData), "Resumo");
+
+    let playersData = [[
+        "Número", "Nome do Jogador", 
+        "Jogo 1ªP", "Banco 1ªP", 
+        "Jogo 2ªP", "Banco 2ªP", 
+        "Tempo Total Jogo", "Tempo Total Banco", 
+        "Entradas", "Amarelos", "Vermelhos"
+    ]];
+    players.forEach(p => {
+        let totJ = p.secondsPlayedP1 + p.secondsPlayedP2;
+        let totB = p.secondsRestedP1 + p.secondsRestedP2;
+        playersData.push([
+            p.number, p.name, 
+            formatTime(p.secondsPlayedP1), formatTime(p.secondsRestedP1), 
+            formatTime(p.secondsPlayedP2), formatTime(p.secondsRestedP2), 
+            formatTime(totJ), formatTime(totB), 
+            p.substitutionsCount, p.yellowCards, p.redCards
+        ]);
+    });
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(playersData), "Plantel");
+
+    let acoes1 = [["Período", "Tempo", "Equipa", "Ação / Evento"]];
+    actionLogsHistory[1].forEach(l => acoes1.push([l.periodo, l.tempo, l.equipa, l.acao]));
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(acoes1), "1ª Parte");
+
+    let acoes2 = [["Período", "Tempo", "Equipa", "Ação / Evento"]];
+    actionLogsHistory[2].forEach(l => acoes2.push([l.periodo, l.tempo, l.equipa, l.acao]));
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(acoes2), "2ª Parte");
+
+    XLSX.writeFile(wb, `Relatorio_PRO_${homeName}_vs_${awayName}.xlsx`);
+}
+
+async function exportReportPDF() {
+    const { jsPDF } = window.jspdf;
+    let doc = new jsPDF();
+
+    let homeName = document.getElementById('input-home-name').value || 'DINAMO';
+    let awayName = document.getElementById('input-away-name').value || 'VISITANTE';
+    let observations = document.getElementById('match-observations').value;
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(16);
+    doc.text("Relatório Oficial - Análise Futsal PRO", 14, 18);
+
+    doc.setFontSize(11);
+    doc.text(`Partida: ${homeName} ${homeGoals} - ${awayGoals} ${awayName}`, 14, 26);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+    doc.text(`Gerado em: ${new Date().toLocaleDateString()} | Analista: ${loggedInUsername.toUpperCase()} | andrepe @ 2026`, 14, 32);
+
+    let y = 40;
+    if (observations) {
+        doc.setFont("helvetica", "bold");
+        doc.text("Observações:", 14, y);
+        y += 5;
+        doc.setFont("helvetica", "normal");
+        doc.text(observations, 14, y, { maxWidth: 180 });
+        y += 12;
+    }
+
+    let s1 = statsData[1];
+    let s2 = statsData[2];
+
+    doc.setFont("helvetica", "bold");
+    doc.text("Resumo Coletivo (1ª Parte | 2ª Parte | Total):", 14, y);
+    y += 6;
+    doc.setFont("helvetica", "normal");
+    doc.text(`- Golos: Dinamo (${s1.home.golos}|${s2.home.golos}|${s1.home.golos+s2.home.golos}) x Visitante (${s1.away.golos}|${s2.away.golos}|${s1.away.golos+s2.away.golos})`, 14, y); y += 5;
+    doc.text(`- Faltas: Dinamo (${s1.home.livres}|${s2.home.livres}|${s1.home.livres+s2.home.livres}) x Visitante (${s1.away.livres}|${s2.away.livres}|${s1.away.livres+s2.away.livres})`, 14, y); y += 5;
+    doc.text(`- Cantos: Dinamo (${s1.home.cantos}|${s2.home.cantos}|${s1.home.cantos+s2.home.cantos}) x Visitante (${s1.away.cantos}|${s2.away.cantos}|${s1.away.cantos+s2.away.cantos})`, 14, y); y += 10;
+
+    doc.setFont("helvetica", "bold");
+    doc.text("Estatísticas de Atletas (1ªP / 2ªP / Total / Cartões):", 14, y);
+    y += 6;
+    doc.setFont("helvetica", "normal");
+
+    players.forEach(p => {
+        if (y > 280) { doc.addPage(); y = 20; }
+        let totJ = formatTime(p.secondsPlayedP1 + p.secondsPlayedP2);
+        doc.text(`Nº ${p.number} - ${p.name}: 1ªP[${formatTime(p.secondsPlayedP1)}] 2ªP[${formatTime(p.secondsPlayedP2)}] Tot[${totJ}] | Entradas[${p.substitutionsCount}] | 🟨${p.yellowCards} 🟥${p.redCards}`, 14, y);
+        y += 5;
+    });
+
+    y += 10;
+
+    let tempContainer = document.createElement('div');
+    tempContainer.style.position = 'absolute';
+    tempContainer.style.left = '-9999px';
+    tempContainer.style.width = '600px';
+    tempContainer.style.background = '#1e1e1e';
+    tempContainer.style.padding = '10px';
+    document.body.appendChild(tempContainer);
+
+    let currentContainerHTML = document.getElementById('capture-pitch-container').innerHTML;
+    periodPitchHTML[currentPeriod] = currentContainerHTML;
+
+    if (periodPitchHTML[1]) {
+        let div1 = document.createElement('div');
+        div1.innerHTML = `<h4 style="color:#00ffcc; margin:5px 0; font-size:12px;">Mapas de Lances - 1ª Parte</h4>` + periodPitchHTML[1];
+        tempContainer.appendChild(div1);
+    }
+    if (periodPitchHTML[2]) {
+        let div2 = document.createElement('div');
+        div2.style.marginTop = '15px';
+        div2.innerHTML = `<h4 style="color:#00ffcc; margin:5px 0; font-size:12px;">Mapas de Lances - 2ª Parte</h4>` + periodPitchHTML[2];
+        tempContainer.appendChild(div2);
+    }
+
+    try {
+        let canvas = await html2canvas(tempContainer, { backgroundColor: '#1e1e1e', scale: 2, logging: false });
+        document.body.removeChild(tempContainer);
+
+        let imgData = canvas.toDataURL('image/png');
+        let imgWidth = 180;
+        let imgHeight = (canvas.height * imgWidth) / canvas.width;
+        
+        if (y + imgHeight > 280) { doc.addPage(); y = 20; }
+        doc.setFont("helvetica", "bold");
+        doc.text("Mapa de Lances / Remates e Golos (1ª e 2ª Parte):", 14, y);
+        y += 6;
+        doc.addImage(imgData, 'PNG', 14, y, imgWidth, imgHeight);
+        y += imgHeight + 10;
+    } catch (err) {
+        console.error("Erro ao capturar os campos para o PDF", err);
+        if (document.body.contains(tempContainer)) document.body.removeChild(tempContainer);
+    }
+
+    if (y > 260) { doc.addPage(); y = 20; }
+    doc.setFont("helvetica", "bold");
+    doc.text("Ocorrências - 1ª Parte:", 14, y);
+    y += 6;
+    doc.setFont("helvetica", "normal");
+    if (actionLogsHistory[1].length === 0) {
+        doc.text("Sem registos na 1ª parte.", 14, y);
+        y += 6;
+    } else {
+        actionLogsHistory[1].forEach(log => {
+            if (y > 280) { doc.addPage(); y = 20; }
+            doc.text(`[${log.tempo}] ${log.equipa}: ${log.acao}`, 14, y);
+            y += 5;
+        });
+    }
+
+    y += 5;
+    if (y > 260) { doc.addPage(); y = 20; }
+    doc.setFont("helvetica", "bold");
+    doc.text("Ocorrências - 2ª Parte:", 14, y);
+    y += 6;
+    doc.setFont("helvetica", "normal");
+    if (actionLogsHistory[2].length === 0) {
+        doc.text("Sem registos na 2ª parte.", 14, y);
+        y += 6;
+    } else {
+        actionLogsHistory[2].forEach(log => {
+            if (y > 280) { doc.addPage(); y = 20; }
+            doc.text(`[${log.tempo}] ${log.equipa}: ${log.acao}`, 14, y);
+            y += 5;
+        });
+    }
+
+    doc.save(`Relatorio_PRO_${homeName}_vs_${awayName}.pdf`);
 }

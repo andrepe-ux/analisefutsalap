@@ -1,162 +1,442 @@
-<!-- index.html -->
 <!DOCTYPE html>
 <html lang="pt">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Análise Futsal AP</title>
+    <title>Analise Futsal PRO - Painel Principal</title>
     <link rel="stylesheet" href="style.css">
+    <style>
+        body {
+            background-color: #121212;
+            color: #e0e0e0;
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 15px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            box-sizing: border-box;
+        }
+        .main-container {
+            width: 100%;
+            max-width: 800px;
+            background: #1a1a1a;
+            border: 1px solid #333;
+            border-radius: 10px;
+            padding: 25px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.7);
+            box-sizing: border-box;
+        }
+        .step-section { display: none; }
+        .step-section.active { display: block; }
+        h2 { color: #00ffcc; text-align: center; margin-top: 0; margin-bottom: 20px; font-size: 1.5rem; }
+        .login-input-group { margin-bottom: 15px; }
+        .login-input-group label { display: block; margin-bottom: 5px; font-size: 0.9rem; color: #bbb; }
+        .login-input-group input, .login-input-group select {
+            width: 100%; padding: 12px; background: #222; border: 1px solid #444; color: #fff; border-radius: 6px; box-sizing: border-box; font-size: 1rem;
+        }
+        .btn-action {
+            width: 100%; padding: 14px; background: #00ffcc; color: #000; border: none; border-radius: 6px; font-weight: bold; font-size: 1rem; cursor: pointer; margin-top: 10px; transition: background 0.2s;
+        }
+        .btn-action:hover { background: #00cca3; }
+        .btn-secondary { background: #333; color: #00ffcc; border: 1px solid #00ffcc; }
+        .btn-secondary:hover { background: #222; }
+        
+        .selection-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 15px; margin-top: 15px; }
+        .selection-card {
+            background: #222; border: 2px solid #444; border-radius: 8px; padding: 25px; text-align: center; cursor: pointer; transition: all 0.2s; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 10px;
+        }
+        .selection-card:hover { border-color: #00ffcc; background: #252a28; transform: translateY(-2px); }
+        .selection-card h3 { margin: 0; color: #00ffcc; font-size: 1.2rem; }
+        .selection-card p { margin: 0; font-size: 0.85rem; color: #aaa; line-height: 1.4; }
+        
+        #roster-checklist-container {
+            display: grid; 
+            grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); 
+            gap: 10px; 
+            max-height: 50vh;
+            min-height: 200px;
+            overflow-y: auto; 
+            padding: 10px; 
+            background: #121212; 
+            border: 1px solid #333; 
+            border-radius: 6px; 
+            margin-bottom: 12px;
+            box-sizing: border-box;
+        }
+
+        .player-checkbox-item {
+            display: flex; align-items: center; gap: 10px; background: #222; padding: 10px 12px; border-radius: 6px; font-size: 0.9rem; color: #fff; border: 1px solid #444; cursor: pointer; transition: border-color 0.2s;
+        }
+        .player-checkbox-item:hover { border-color: #00ffcc; }
+        .player-checkbox-item input[type="checkbox"] { width: 18px; height: 18px; cursor: pointer; accent-color: #00ffcc; }
+        
+        .step-indicator { text-align: center; font-size: 0.8rem; color: #777; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
+
+        @media (max-width: 600px) {
+            body { padding: 10px; }
+            .main-container { padding: 15px; }
+            #roster-checklist-container { grid-template-columns: 1fr; }
+            h2 { font-size: 1.25rem; }
+        }
+    </style>
 </head>
 <body>
 
-    <div class="main-layout">
-        <!-- Lado Esquerdo: 50% - Gestão de Plantel, Importação/Modelo Excel e Sessão JSON -->
-        <div class="left-panel">
-            <div class="panel-header">
-                <h3 id="home-team-title">Plantel / Jogadores (CASA)</h3>
-                <div class="excel-actions">
-                    <button class="btn-template" onclick="downloadTemplate()" title="Descarregar modelo em Excel">Modelo Excel</button>
-                    <label for="excel-file" class="btn-excel" title="Importar Excel de Plantel">Importar Excel</label>
-                    <input type="file" id="excel-file" accept=".xlsx, .xls, .csv" onchange="importExcel(event)">
-                </div>
+    <div class="main-container">
+        <!-- PASSO 1: LOGIN -->
+        <div id="step-1" class="step-section active">
+            <div class="step-indicator">Passo 1 de 4</div>
+            <h2>🔐 Autenticação Analise Futsal PRO</h2>
+            <div class="login-input-group">
+                <label>Utilizador / Treinador:</label>
+                <input type="text" id="login-user" placeholder="Nome do Treinador/Analista">
+            </div>
+            <div class="login-input-group">
+                <label>Palavra-passe:</label>
+                <input type="password" id="login-pass" placeholder="Password">
+            </div>
+            <button class="btn-action" onclick="handleLogin()">Entrar no Sistema</button>
+        </div>
+
+        <!-- PASSO 2: CONFIGURAÇÃO DO JOGO E ESCALÃO -->
+        <div id="step-2" class="step-section">
+            <div class="step-indicator">Passo 2 de 4</div>
+            <h2>⚙️ Configuração e Importação do Jogo</h2>
+            
+            <div class="login-input-group" style="background: #1e1e1e; padding: 12px; border-radius: 6px; border: 1px dashed #00ffcc;">
+                <label style="color: #00ffcc; font-weight: bold;">📂 Importar Sessão Anterior (.json):</label>
+                <input type="file" id="import-json-file" accept=".json" onchange="loadSessionJSON(event)" style="padding: 8px; margin-top: 5px;">
+                <div id="json-load-status" style="font-size: 0.8rem; color: #ffcc00; margin-top: 6px;">Nenhum ficheiro importado.</div>
             </div>
 
-            <!-- Secção de Gestão de Sessão (JSON) -->
-            <div class="session-actions-box">
-                <button class="btn-session-save" onclick="exportSessionJSON()">Guardar Sessão (JSON)</button>
-                <label for="json-file" class="btn-session-load">Importar Sessão (JSON)</label>
-                <input type="file" id="json-file" accept=".json" onchange="importSessionJSON(event)">
+            <div class="login-input-group" style="margin-top: 15px;">
+                <label>Nome da Equipa da Casa (A sua equipa):</label>
+                <input type="text" id="cfg-home-name" value="GRC Dínamo Sanjoanense">
+            </div>
+            <div class="login-input-group">
+                <label>Nome da Equipa Visitante:</label>
+                <input type="text" id="cfg-away-name" value="Adversário Futsal">
+            </div>
+            
+            <div class="login-input-group">
+                <label>Escalão / Categoria:</label>
+                <select id="cfg-select-escalao">
+                    <!-- Preenchido via plantels.js -->
+                </select>
             </div>
 
-            <div class="players-list" id="players-container">
-                <!-- Preenchido via JavaScript -->
+            <div class="login-input-group">
+                <label>Sentido de Ataque Inicial (1ª Parte):</label>
+                <select id="cfg-attack-direction">
+                    <option value="left-to-right">Ataca da Esquerda para a Direita ➡️</option>
+                    <option value="right-to-left">Ataca da Direita para a Esquerda ⬅️</option>
+                </select>
+            </div>
+
+            <div style="display: flex; gap: 10px; margin-top: 20px;">
+                <button class="btn-action btn-secondary" onclick="goToStep(1)">Voltar</button>
+                <button class="btn-action" onclick="proceedToStep3()">Avançar para Convocatória</button>
             </div>
         </div>
 
-        <!-- Lado Direito: 50% - Controlo, Relatórios e Rodapé -->
-        <div class="right-panel">
-            <div class="scoreboard-container">
-                
-                <!-- Secção do Cronômetro, Períodos e Nomes das Equipas -->
-                <div class="timer-section">
-                    <div class="teams-input-box">
-                        <div class="team-input-group">
-                            <label>Equipa Casa:</label>
-                            <input type="text" id="input-home-name" value="CASA" oninput="updateTeamNames()">
-                        </div>
-                        <div class="team-input-group">
-                            <label>Equipa Visitante:</label>
-                            <input type="text" id="input-away-name" value="VISITANTE" oninput="updateTeamNames()">
-                        </div>
-                    </div>
-
-                    <div class="period-selector">
-                        <button id="btn-p1" class="period-btn active" onclick="switchPeriod(1)">1º Período</button>
-                        <button id="btn-p2" class="period-btn" onclick="switchPeriod(2)">2º Período</button>
-                        <!-- Botões de Relatório -->
-                        <div class="report-buttons">
-                            <button class="btn-report-excel" onclick="exportReportExcel()">Excel</button>
-                            <button class="btn-report-pdf" onclick="exportReportPDF()">PDF</button>
-                        </div>
-                    </div>
-
-                    <div class="timer-box">
-                        <h2 id="timer">20:00</h2>
-                        <div class="timer-controls">
-                            <button class="btn-start" onclick="startTimer()">Iniciar</button>
-                            <button class="btn-pause" onclick="pauseTimer()">Pausar</button>
-                            <button class="btn-reset" onclick="resetTimer()">Reiniciar</button>
-                        </div>
-                    </div>
-
-                    <div class="timeouts-container">
-                        <div class="to-team">
-                            <span id="to-home-label">Time-out Casa:</span>
-                            <button id="timeout-home-btn" onclick="requestTimeout('home')">Pedir Pausa</button>
-                            <span id="timeout-home-status" class="to-used">Disponível</span>
-                        </div>
-                        <div class="to-team">
-                            <span id="to-away-label">Time-out Visitante:</span>
-                            <button id="timeout-away-btn" onclick="requestTimeout('away')">Pedir Pausa</button>
-                            <span id="timeout-away-status" class="to-used">Disponível</span>
-                        </div>
-                    </div>
+        <!-- PASSO 3: SELEÇÃO DE JOGADORES (CONVOCATÓRIA MÁX 14) -->
+        <div id="step-3" class="step-section">
+            <div class="step-indicator">Passo 3 de 4</div>
+            <h2>👥 Convocatória de Atletas (Máx. 14)</h2>
+            <p style="font-size: 0.85rem; color: #aaa; margin-top: 0; margin-bottom: 10px;" id="step3-subtitle">Selecione os atletas convocados:</p>
+            
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                <span style="font-size: 0.85rem; color: #00ffcc; font-weight: bold;" id="roster-count-label">Atletas selecionados: 0/14</span>
+                <div>
+                    <button type="button" onclick="toggleAllRoster(true)" style="background:#222; color:#00ffcc; border:1px solid #00ffcc; font-size:0.8rem; padding:5px 10px; cursor:pointer; border-radius:4px;">Selecionar 14</button>
+                    <button type="button" onclick="toggleAllRoster(false)" style="background:#222; color:#ff5555; border:1px solid #ff5555; font-size:0.8rem; padding:5px 10px; cursor:pointer; border-radius:4px;">Nenhum</button>
                 </div>
-
-                <!-- Painel de Estatísticas / Ações da Partida -->
-                <div class="stats-panel">
-                    <div class="stats-team-col">
-                        <h4 class="team-title-home" id="stats-home-title">CASA</h4>
-                        <div class="stat-row"><button onclick="recordStat('home', 'livres')">Faltas/Livres</button><span id="home-livres">0</span></div>
-                        <div class="stat-row"><button onclick="recordStat('home', 'cantos')">Cantos</button><span id="home-cantos">0</span></div>
-                        <div class="stat-row"><button onclick="recordStat('home', 'lancamentos')">Lançamentos</button><span id="home-lancamentos">0</span></div>
-                        <div class="stat-row"><button onclick="recordStat('home', 'posse')">Perdas Posse</button><span id="home-posse">0</span></div>
-                        <div class="stat-row"><button onclick="recordStat('home', 'passes_falhados')">Passes Falhados</button><span id="home-passes_falhados">0</span></div>
-                        <div class="stat-row"><button onclick="recordStat('home', 'passes_completos')">Passes Certos</button><span id="home-passes_completos">0</span></div>
-                    </div>
-
-                    <div class="stats-timeline">
-                        <h4>Registo de Ações</h4>
-                        <div class="log-box" id="action-log"></div>
-                    </div>
-
-                    <div class="stats-team-col">
-                        <h4 class="team-title-away" id="stats-away-title">VISITANTE</h4>
-                        <div class="stat-row"><span id="away-livres">0</span><button onclick="recordStat('away', 'livres')">Faltas/Livres</button></div>
-                        <div class="stat-row"><span id="away-cantos">0</span><button onclick="recordStat('away', 'cantos')">Cantos</button></div>
-                        <div class="stat-row"><span id="away-lancamentos">0</span><button onclick="recordStat('away', 'lancamentos')">Lançamentos</button></div>
-                        <div class="stat-row"><span id="away-posse">0</span><button onclick="recordStat('away', 'posse')">Perdas Posse</button></div>
-                        <div class="stat-row"><span id="away-passes_falhados">0</span><button onclick="recordStat('away', 'passes_falhados')">Passes Falhados</button></div>
-                        <div class="stat-row"><span id="away-passes_completos">0</span><button onclick="recordStat('away', 'passes_completos')">Passes Certos</button></div>
-                    </div>
-                </div>
-
-                <!-- 4 Campos (2 em cima: Remates, 2 por baixo: Golos) -->
-                <div class="pitch-container-grid">
-                    <div class="pitch-row">
-                        <div class="half-pitch-wrapper">
-                            <h3 id="pitch-remate-home-title">REMATE CASA</h3>
-                            <div class="futsal-pitch pitch-shot" id="pitch-shot-home" ondblclick="handlePitchDoubleClick(event, 'home', 'shot')">
-                                <div class="goal-semicircle-only"></div>
-                            </div>
-                        </div>
-                        <div class="half-pitch-wrapper">
-                            <h3 id="pitch-remate-away-title">REMATE VISITANTE</h3>
-                            <div class="futsal-pitch pitch-shot" id="pitch-shot-away" ondblclick="handlePitchDoubleClick(event, 'away', 'shot')">
-                                <div class="goal-semicircle-only"></div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="pitch-row">
-                        <div class="half-pitch-wrapper">
-                            <h3 id="pitch-golo-home-title">GOLO CASA (<span id="home-score">0</span>)</h3>
-                            <div class="futsal-pitch pitch-goal" id="pitch-goal-home" ondblclick="handlePitchDoubleClick(event, 'home', 'goal')">
-                                <div class="goal-semicircle-only"></div>
-                            </div>
-                        </div>
-                        <div class="half-pitch-wrapper">
-                            <h3 id="pitch-golo-away-title">GOLO VISITANTE (<span id="away-score">0</span>)</h3>
-                            <div class="futsal-pitch pitch-goal" id="pitch-goal-away" ondblclick="handlePitchDoubleClick(event, 'away', 'goal')">
-                                <div class="goal-semicircle-only"></div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Rodapé Profissional -->
-                <footer class="app-footer">
-                    andrepe @ 2026
-                </footer>
-
             </div>
+
+            <div id="roster-checklist-container"></div>
+
+            <div class="login-input-group" style="margin-top: 15px; margin-bottom: 10px;">
+                <label>Foco de Ações no Módulo Tático:</label>
+                <select id="cfg-filter-actions">
+                    <option value="all">⚡ Todas as Ações (Positivas e Negativas)</option>
+                    <option value="negative-focus">🔴 Foco Principal em Ações Negativas</option>
+                    <option value="positive-focus">🟢 Foco Principal em Ações Positivas</option>
+                </select>
+            </div>
+
+            <button class="btn-action btn-secondary" onclick="exportSessionJSON()" style="margin-bottom: 5px;">💾 Guardar Sessão / Convocatória (.json)</button>
+
+            <div style="display: flex; gap: 10px;">
+                <button class="btn-action btn-secondary" onclick="goToStep(2)">Voltar</button>
+                <button class="btn-action" onclick="saveAndProceedToStep4()">Concluir Configuração</button>
+            </div>
+        </div>
+
+        <!-- PASSO 4: ESCOLHA DO MÓDULO DE ANÁLISE -->
+        <div id="step-4" class="step-section">
+            <div class="step-indicator">Passo 4 de 4</div>
+            <h2>📊 Escolha o Módulo de Análise</h2>
+            <p style="font-size: 0.9rem; color: #ccc; text-align: center; margin-bottom: 20px; line-height: 1.4;">Configuração guardada com sucesso! Selecione abaixo o tipo de análise que pretende executar:</p>
+            
+            <div class="selection-grid">
+                <div class="selection-card" onclick="openTacticalModule()">
+                    <span style="font-size: 2.5rem;">⚽</span>
+                    <h3>Análise Detalhada Atletas</h3>
+                    <p>Módulo tático em campo 40x20 com cronómetro, zonas automáticas e registo por atleta.</p>
+                </div>
+                <div class="selection-card" onclick="openGeneralModule()">
+                    <span style="font-size: 2.5rem;">📈</span>
+                    <h3>Análise Geral Equipa</h3>
+                    <p>Painel de resumo coletivo, estatísticas globais e indicadores consolidados da equipa.</p>
+                </div>
+            </div>
+
+            <button class="btn-action btn-secondary" onclick="goToStep(3)" style="margin-top: 20px;">Voltar à Convocatória</button>
         </div>
     </div>
 
-    <!-- Bibliotecas SheetJS (Excel), jsPDF (PDF) e html2canvas (Captura de imagem dos campos para o PDF) -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-    <script src="app.js"></script>
+    <!-- SCRIPTS EXTERNOS DE DADOS E UTILIZADORES -->
+    <script src="users.js"></script>
+    <script src="plantels.js"></script>
+    <script>
+        let currentSessionData = {
+            username: "Treinador",
+            homeName: "GRC Dínamo Sanjoanense",
+            awayName: "Adversário Futsal",
+            category: "Sub 19",
+            attackDirection: "left-to-right",
+            filterActions: "all",
+            roster: [],
+            tacticalLogs: { 1: [], 2: [] }
+        };
+
+        function loadAvailableEscaloes() {
+            let selectEl = document.getElementById('cfg-select-escalao');
+            selectEl.innerHTML = '';
+
+            if (typeof globalPlantelsData !== 'undefined' && globalPlantelsData.escaloes) {
+                let escKeys = Object.keys(globalPlantelsData.escaloes);
+                escKeys.forEach(escName => {
+                    let opt = document.createElement('option');
+                    opt.value = escName;
+                    opt.innerText = escName;
+                    selectEl.appendChild(opt);
+                });
+
+                if (currentSessionData.category && globalPlantelsData.escaloes[currentSessionData.category]) {
+                    selectEl.value = currentSessionData.category;
+                }
+            }
+        }
+
+        function proceedToStep3() {
+            currentSessionData.homeName = document.getElementById('cfg-home-name').value;
+            currentSessionData.awayName = document.getElementById('cfg-away-name').value;
+            currentSessionData.category = document.getElementById('cfg-select-escalao').value;
+            currentSessionData.attackDirection = document.getElementById('cfg-attack-direction').value;
+
+            if (typeof globalPlantelsData !== 'undefined' && globalPlantelsData.escaloes) {
+                let escData = globalPlantelsData.escaloes[currentSessionData.category];
+                if (escData && escData["Dinamo"]) {
+                    currentSessionData.roster = escData["Dinamo"].map(p => {
+                        let existing = currentSessionData.roster.find(item => item.number === p.number);
+                        return { ...p, selected: existing ? existing.selected : false };
+                    });
+                } else {
+                    currentSessionData.roster = [];
+                }
+            }
+            goToStep(3);
+        }
+
+        function goToStep(stepNum) {
+            document.querySelectorAll('.step-section').forEach(sec => sec.classList.remove('active'));
+            document.getElementById(`step-${stepNum}`).classList.add('active');
+
+            if (stepNum === 3) {
+                document.getElementById('step3-subtitle').innerText = `Atletas disponíveis (${currentSessionData.category} - Dinamo):`;
+                renderRosterChecklist();
+            }
+        }
+
+        function handleLogin() { 
+            let userInput = document.getElementById('login-user').value.trim();
+            if (userInput) {
+                currentSessionData.username = userInput;
+            }
+            goToStep(2); 
+        }
+
+        function loadSessionJSON(event) {
+            let file = event.target.files[0];
+            if (!file) return;
+            let reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    let parsed = JSON.parse(e.target.result);
+                    currentSessionData = parsed;
+                    if (parsed.username) document.getElementById('login-user').value = parsed.username;
+                    if (parsed.homeName) document.getElementById('cfg-home-name').value = parsed.homeName;
+                    if (parsed.awayName) document.getElementById('cfg-away-name').value = parsed.awayName;
+                    if (parsed.category) {
+                        currentSessionData.category = parsed.category;
+                        let selectEl = document.getElementById('cfg-select-escalao');
+                        if (selectEl) selectEl.value = parsed.category;
+                    }
+                    if (parsed.attackDirection) document.getElementById('cfg-attack-direction').value = parsed.attackDirection;
+                    if (parsed.filterActions) document.getElementById('cfg-filter-actions').value = parsed.filterActions;
+                    
+                    document.getElementById('json-load-status').innerText = `Sessão importada com sucesso!`;
+                    document.getElementById('json-load-status').style.color = '#00ffcc';
+                } catch (err) { alert("Erro ao ler o ficheiro JSON."); }
+            };
+            reader.readAsText(file);
+        }
+
+        function exportSessionJSON() {
+            currentSessionData.homeName = document.getElementById('cfg-home-name').value;
+            currentSessionData.awayName = document.getElementById('cfg-away-name').value;
+            currentSessionData.category = document.getElementById('cfg-select-escalao').value;
+            currentSessionData.attackDirection = document.getElementById('cfg-attack-direction').value;
+            currentSessionData.filterActions = document.getElementById('cfg-filter-actions').value;
+
+            let checkboxes = document.querySelectorAll('.roster-chk');
+            if (checkboxes.length > 0) {
+                checkboxes.forEach(chk => {
+                    let idx = parseInt(chk.value);
+                    if (currentSessionData.roster[idx]) {
+                        currentSessionData.roster[idx].selected = chk.checked;
+                    }
+                });
+            }
+
+            let dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(currentSessionData, null, 2));
+            let downloadAnchor = document.createElement('a');
+            downloadAnchor.setAttribute("href", dataStr);
+            downloadAnchor.setAttribute("download", `sessao_futsal_${currentSessionData.homeName.replace(/\s+/g, '_')}.json`);
+            document.body.appendChild(downloadAnchor);
+            downloadAnchor.click();
+            downloadAnchor.remove();
+        }
+
+        function renderRosterChecklist() {
+            let container = document.getElementById('roster-checklist-container');
+            container.innerHTML = '';
+            let rosterList = currentSessionData.roster || [];
+            
+            rosterList.forEach((p, idx) => {
+                let isChecked = (p.selected === true) ? 'checked' : '';
+                let item = document.createElement('label');
+                item.className = 'player-checkbox-item';
+                item.innerHTML = `<input type="checkbox" class="roster-chk" value="${idx}" ${isChecked} onchange="updateSelectedCount()"><span>#${p.number} ${p.name}</span>`;
+                container.appendChild(item);
+            });
+            updateSelectedCount();
+        }
+
+        function updateSelectedCount() {
+            let checkboxes = document.querySelectorAll('.roster-chk:checked');
+            let count = checkboxes.length;
+            let counterEl = document.getElementById('roster-count-label');
+            counterEl.innerText = `Atletas selecionados: ${count}/14`;
+            if (count > 14) {
+                counterEl.style.color = '#ff5555';
+            } else {
+                counterEl.style.color = '#00ffcc';
+            }
+        }
+
+        function toggleAllRoster(status) {
+            let checkboxes = document.querySelectorAll('.roster-chk');
+            checkboxes.forEach((chk, i) => {
+                if (status && i < 14) {
+                    chk.checked = true;
+                } else {
+                    chk.checked = false;
+                }
+            });
+            updateSelectedCount();
+        }
+
+        function saveAndProceedToStep4() {
+            currentSessionData.filterActions = document.getElementById('cfg-filter-actions').value;
+            let checkboxes = document.querySelectorAll('.roster-chk');
+            let convocados = [];
+
+            checkboxes.forEach(chk => {
+                let idx = parseInt(chk.value);
+                if (currentSessionData.roster[idx]) {
+                    currentSessionData.roster[idx].selected = chk.checked;
+                    if (chk.checked) {
+                        convocados.push(currentSessionData.roster[idx]);
+                    }
+                }
+            });
+
+            if (convocados.length === 0) {
+                alert("Atenção: Tem de selecionar pelo menos um atleta para a convocatória.");
+                return;
+            }
+
+            if (convocados.length > 14) {
+                alert(`Atenção: Selecionou ${convocados.length} atletas. O limite máximo permitido para a convocatória são 14 atletas!`);
+                return;
+            }
+
+            // Sincroniza todas as chaves possivelmente lidas por módulos externos/antigos para evitar falhas
+            localStorage.setItem('futsal_session_data', JSON.stringify(currentSessionData));
+            localStorage.setItem('matchRoster', JSON.stringify(convocados));
+            localStorage.setItem('atletasConvocados', JSON.stringify(convocados));
+            
+            goToStep(4);
+        }
+
+        function openTacticalModule() {
+            saveStateToStorage();
+            window.location.href = 'analise_tatica.html';
+        }
+
+        function openGeneralModule() {
+            saveStateToStorage();
+            window.location.href = 'analise_geral.html';
+        }
+
+        function saveStateToStorage() {
+            let checkboxes = document.querySelectorAll('.roster-chk');
+            let convocados = [];
+            checkboxes.forEach(chk => {
+                let idx = parseInt(chk.value);
+                if (currentSessionData.roster[idx]) {
+                    currentSessionData.roster[idx].selected = chk.checked;
+                    if (chk.checked) convocados.push(currentSessionData.roster[idx]);
+                }
+            });
+            localStorage.setItem('futsal_session_data', JSON.stringify(currentSessionData));
+            localStorage.setItem('matchRoster', JSON.stringify(convocados));
+            localStorage.setItem('atletasConvocados', JSON.stringify(convocados));
+        }
+
+        window.onload = function() {
+            let saved = localStorage.getItem('futsal_session_data');
+            if (saved) {
+                try {
+                    currentSessionData = JSON.parse(saved);
+                    
+                    if (currentSessionData.username) document.getElementById('login-user').value = currentSessionData.username;
+                    if (currentSessionData.homeName) document.getElementById('cfg-home-name').value = currentSessionData.homeName;
+                    if (currentSessionData.awayName) document.getElementById('cfg-away-name').value = currentSessionData.awayName;
+                    if (currentSessionData.attackDirection) document.getElementById('cfg-attack-direction').value = currentSessionData.attackDirection;
+                    if (currentSessionData.filterActions) document.getElementById('cfg-filter-actions').value = currentSessionData.filterActions;
+                } catch(e) {}
+            }
+            loadAvailableEscaloes();
+            if (typeof defaultUser !== 'undefined' && defaultUser) {
+                if (document.getElementById('login-user')) document.getElementById('login-user').value = defaultUser.username || '';
+                if (document.getElementById('login-pass')) document.getElementById('login-pass').value = defaultUser.password || '';
+            }
+        };
+    </script>
 </body>
 </html>
