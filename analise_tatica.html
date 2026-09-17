@@ -232,6 +232,25 @@
                 <button class="btn-corr" onclick="window.location.href='index.html'">Voltar Principal</button>
             </div>
 
+            <!-- CONTROLO DE CONFIGURAÇÃO DE JOGO (Sentido & Filtro de Análise Detalhada) -->
+            <div style="background: #141414; border: 1px solid #333; border-radius: 6px; padding: 8px; display: flex; flex-direction: column; gap: 6px;">
+                <div>
+                    <label style="font-size: 0.75rem; color: #aaa; display: block; margin-bottom: 2px;">Sentido de Ataque (1ª Parte):</label>
+                    <select id="tac-attack-direction-select" onchange="changeAttackDirectionSetting()" style="width: 100%; padding: 6px; background: #222; color: #fff; border: 1px solid #444; border-radius: 4px; font-size: 0.8rem;">
+                        <option value="left-to-right">Esquerda para Direita ➡️</option>
+                        <option value="right-to-left">Direita para Esquerda ⬅️</option>
+                    </select>
+                </div>
+                <div>
+                    <label style="font-size: 0.75rem; color: #00ffcc; display: block; margin-bottom: 2px; font-weight: bold;">Filtro de Análise Detalhada:</label>
+                    <select id="tac-filter-actions-select" onchange="changeFilterActionsSetting()" style="width: 100%; padding: 6px; background: #222; color: #fff; border: 1px solid #444; border-radius: 4px; font-size: 0.8rem;">
+                        <option value="all">⚡ Todas as Ações</option>
+                        <option value="negative-focus">🔴 Foco em Ações Negativas</option>
+                        <option value="positive-focus">🟢 Foco em Ações Positivas</option>
+                    </select>
+                </div>
+            </div>
+
             <!-- Cronómetro Avançado -->
             <div class="timer-section" style="padding: 8px; background: #141414; border-radius: 6px; text-align: center;">
                 <div style="display: flex; align-items: center; justify-content: center; gap: 4px;">
@@ -382,6 +401,13 @@
                     sessionData = JSON.parse(saved);
                     tacticalAttackDirection = sessionData.attackDirection || 'left-to-right';
                     
+                    if (sessionData.filterActions) {
+                        document.getElementById('tac-filter-actions-select').value = sessionData.filterActions;
+                    }
+                    if (sessionData.attackDirection) {
+                        document.getElementById('tac-attack-direction-select').value = sessionData.attackDirection;
+                    }
+                    
                     let listaAtletas = sessionData.convocados || (sessionData.roster ? sessionData.roster.filter(p => p.selected === true) : []);
                     if (listaAtletas.length === 0 && sessionData.roster) {
                         listaAtletas = sessionData.roster;
@@ -405,6 +431,19 @@
 
             openTacticalFilterModal();
         };
+
+        function changeAttackDirectionSetting() {
+            tacticalAttackDirection = document.getElementById('tac-attack-direction-select').value;
+            sessionData.attackDirection = tacticalAttackDirection;
+            syncLogsToLocalStorage();
+            updateTacticalDirectionUI();
+            updateWatermarksAndOverlays();
+        }
+
+        function changeFilterActionsSetting() {
+            sessionData.filterActions = document.getElementById('tac-filter-actions-select').value;
+            syncLogsToLocalStorage();
+        }
 
         function updateTacTimerDisplay() {
             let min = Math.floor(tacTotalSeconds / 60);
@@ -584,7 +623,6 @@
         }
 
         function handleTacticalPitchClick(event) {
-            // Evita disparar caso clique diretamente num marcador existente
             if (event.target.classList.contains('tactical-marker')) return;
             
             const pitch = event.currentTarget;

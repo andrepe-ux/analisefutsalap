@@ -43,13 +43,13 @@
         .btn-secondary { background: #333; color: #00ffcc; border: 1px solid #00ffcc; }
         .btn-secondary:hover { background: #222; }
         
-        .selection-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 15px; margin-top: 15px; }
+        .selection-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 15px; margin-top: 15px; }
         .selection-card {
-            background: #222; border: 2px solid #444; border-radius: 8px; padding: 25px; text-align: center; cursor: pointer; transition: all 0.2s; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 10px;
+            background: #222; border: 2px solid #444; border-radius: 8px; padding: 20px; text-align: center; cursor: pointer; transition: all 0.2s; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 8px;
         }
         .selection-card:hover { border-color: #00ffcc; background: #252a28; transform: translateY(-2px); }
-        .selection-card h3 { margin: 0; color: #00ffcc; font-size: 1.2rem; }
-        .selection-card p { margin: 0; font-size: 0.85rem; color: #aaa; line-height: 1.4; }
+        .selection-card h3 { margin: 0; color: #00ffcc; font-size: 1.1rem; }
+        .selection-card p { margin: 0; font-size: 0.8rem; color: #aaa; line-height: 1.3; }
         
         #roster-checklist-container {
             display: grid; 
@@ -127,14 +127,6 @@
                 </select>
             </div>
 
-            <div class="login-input-group">
-                <label>Sentido de Ataque Inicial (1ª Parte):</label>
-                <select id="cfg-attack-direction">
-                    <option value="left-to-right">Ataca da Esquerda para a Direita ➡️</option>
-                    <option value="right-to-left">Ataca da Direita para a Esquerda ⬅️</option>
-                </select>
-            </div>
-
             <div style="display: flex; gap: 10px; margin-top: 20px;">
                 <button class="btn-action btn-secondary" onclick="goToStep(1)">Voltar</button>
                 <button class="btn-action" onclick="proceedToStep3()">Avançar para Convocatória</button>
@@ -157,16 +149,7 @@
 
             <div id="roster-checklist-container"></div>
 
-            <div class="login-input-group" style="margin-top: 15px; margin-bottom: 10px;">
-                <label>Foco de Ações no Módulo Tático:</label>
-                <select id="cfg-filter-actions">
-                    <option value="all">⚡ Todas as Ações (Positivas e Negativas)</option>
-                    <option value="negative-focus">🔴 Foco Principal em Ações Negativas</option>
-                    <option value="positive-focus">🟢 Foco Principal em Ações Positivas</option>
-                </select>
-            </div>
-
-            <button class="btn-action btn-secondary" onclick="exportSessionJSON()" style="margin-bottom: 5px;">💾 Guardar Sessão / Convocatória (.json)</button>
+            <button class="btn-action btn-secondary" onclick="exportSessionJSON()" style="margin-bottom: 5px; margin-top: 10px;">💾 Guardar Sessão / Convocatória (.json)</button>
 
             <div style="display: flex; gap: 10px;">
                 <button class="btn-action btn-secondary" onclick="goToStep(2)">Voltar</button>
@@ -182,14 +165,19 @@
             
             <div class="selection-grid">
                 <div class="selection-card" onclick="openTacticalModule()">
-                    <span style="font-size: 2.5rem;">⚽</span>
+                    <span style="font-size: 2.2rem;">⚽</span>
                     <h3>Análise Detalhada Atletas</h3>
-                    <p>Módulo tático em campo 40x20 com cronómetro, zonas automáticas e registo por atleta.</p>
+                    <p>Módulo tático em campo 40x20 com cronómetro, zonas e registo por atleta.</p>
+                </div>
+                <div class="selection-card" onclick="openGRModule()">
+                    <span style="font-size: 2.2rem;">🛡️</span>
+                    <h3>Análise de Guarda-Redes</h3>
+                    <p>Módulo específico de GR com baliza 3x2m (32 zonas) e meia-pista tática.</p>
                 </div>
                 <div class="selection-card" onclick="openGeneralModule()">
-                    <span style="font-size: 2.5rem;">📈</span>
+                    <span style="font-size: 2.2rem;">📈</span>
                     <h3>Análise Geral Equipa</h3>
-                    <p>Painel de resumo coletivo, estatísticas globais e indicadores consolidados da equipa.</p>
+                    <p>Painel de resumo coletivo e indicadores consolidados da equipa.</p>
                 </div>
             </div>
 
@@ -209,7 +197,8 @@
             attackDirection: "left-to-right",
             filterActions: "all",
             roster: [],
-            tacticalLogs: { 1: [], 2: [] }
+            tacticalLogs: { 1: [], 2: [] },
+            grLogs: { 1: [], 2: [] }
         };
 
         function loadAvailableEscaloes() {
@@ -235,7 +224,6 @@
             currentSessionData.homeName = document.getElementById('cfg-home-name').value;
             currentSessionData.awayName = document.getElementById('cfg-away-name').value;
             currentSessionData.category = document.getElementById('cfg-select-escalao').value;
-            currentSessionData.attackDirection = document.getElementById('cfg-attack-direction').value;
 
             if (typeof globalPlantelsData !== 'undefined' && globalPlantelsData.escaloes) {
                 let escData = globalPlantelsData.escaloes[currentSessionData.category];
@@ -285,8 +273,6 @@
                         let selectEl = document.getElementById('cfg-select-escalao');
                         if (selectEl) selectEl.value = parsed.category;
                     }
-                    if (parsed.attackDirection) document.getElementById('cfg-attack-direction').value = parsed.attackDirection;
-                    if (parsed.filterActions) document.getElementById('cfg-filter-actions').value = parsed.filterActions;
                     
                     document.getElementById('json-load-status').innerText = `Sessão importada com sucesso!`;
                     document.getElementById('json-load-status').style.color = '#00ffcc';
@@ -299,8 +285,6 @@
             currentSessionData.homeName = document.getElementById('cfg-home-name').value;
             currentSessionData.awayName = document.getElementById('cfg-away-name').value;
             currentSessionData.category = document.getElementById('cfg-select-escalao').value;
-            currentSessionData.attackDirection = document.getElementById('cfg-attack-direction').value;
-            currentSessionData.filterActions = document.getElementById('cfg-filter-actions').value;
 
             let checkboxes = document.querySelectorAll('.roster-chk');
             if (checkboxes.length > 0) {
@@ -361,7 +345,6 @@
         }
 
         function saveAndProceedToStep4() {
-            currentSessionData.filterActions = document.getElementById('cfg-filter-actions').value;
             let checkboxes = document.querySelectorAll('.roster-chk');
             let convocados = [];
 
@@ -385,7 +368,6 @@
                 return;
             }
 
-            // Sincroniza todas as chaves possivelmente lidas por módulos externos/antigos para evitar falhas
             localStorage.setItem('futsal_session_data', JSON.stringify(currentSessionData));
             localStorage.setItem('matchRoster', JSON.stringify(convocados));
             localStorage.setItem('atletasConvocados', JSON.stringify(convocados));
@@ -396,6 +378,11 @@
         function openTacticalModule() {
             saveStateToStorage();
             window.location.href = 'analise_tatica.html';
+        }
+
+        function openGRModule() {
+            saveStateToStorage();
+            window.location.href = 'analise_gr.html';
         }
 
         function openGeneralModule() {
@@ -427,8 +414,6 @@
                     if (currentSessionData.username) document.getElementById('login-user').value = currentSessionData.username;
                     if (currentSessionData.homeName) document.getElementById('cfg-home-name').value = currentSessionData.homeName;
                     if (currentSessionData.awayName) document.getElementById('cfg-away-name').value = currentSessionData.awayName;
-                    if (currentSessionData.attackDirection) document.getElementById('cfg-attack-direction').value = currentSessionData.attackDirection;
-                    if (currentSessionData.filterActions) document.getElementById('cfg-filter-actions').value = currentSessionData.filterActions;
                 } catch(e) {}
             }
             loadAvailableEscaloes();
