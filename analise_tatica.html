@@ -197,9 +197,6 @@
         
         .action-negative { border-color: #ff5555; color: #ff5555; }
         .action-negative:hover { background: #ff5555; color: #fff; }
-        
-        .action-warning { border-color: #ffc107; color: #ffc107; }
-        .action-warning:hover { background: #ffc107; color: #000; }
 
         .modal-backdrop {
             position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.8); display: flex; justify-content: center; align-items: center; z-index: 999;
@@ -230,6 +227,25 @@
             <div style="border-bottom: 1px solid #333; padding-bottom: 6px; display: flex; justify-content: space-between; align-items: center;">
                 <h3 style="margin: 0; color: #00ffcc; font-size: 0.95rem;">Análise Tática PRO</h3>
                 <button class="btn-corr" onclick="window.location.href='index.html'">Voltar Principal</button>
+            </div>
+
+            <!-- CONTROLO DE CONFIGURAÇÃO DE JOGO (Sentido & Filtro de Análise Detalhada) -->
+            <div style="background: #141414; border: 1px solid #333; border-radius: 6px; padding: 8px; display: flex; flex-direction: column; gap: 6px;">
+                <div>
+                    <label style="font-size: 0.75rem; color: #aaa; display: block; margin-bottom: 2px;">Sentido de Ataque (1ª Parte):</label>
+                    <select id="tac-attack-direction-select" onchange="changeAttackDirectionSetting()" style="width: 100%; padding: 6px; background: #222; color: #fff; border: 1px solid #444; border-radius: 4px; font-size: 0.8rem;">
+                        <option value="left-to-right">Esquerda para Direita ➡️</option>
+                        <option value="right-to-left">Direita para Esquerda ⬅️</option>
+                    </select>
+                </div>
+                <div>
+                    <label style="font-size: 0.75rem; color: #00ffcc; display: block; margin-bottom: 2px; font-weight: bold;">Filtro de Análise Detalhada:</label>
+                    <select id="tac-filter-actions-select" onchange="changeFilterActionsSetting()" style="width: 100%; padding: 6px; background: #222; color: #fff; border: 1px solid #444; border-radius: 4px; font-size: 0.8rem;">
+                        <option value="all">⚡ Todas as Ações</option>
+                        <option value="negative-focus">🔴 Foco em Ações Negativas</option>
+                        <option value="positive-focus">🟢 Foco em Ações Positivas</option>
+                    </select>
+                </div>
             </div>
 
             <!-- Cronómetro Avançado -->
@@ -382,6 +398,13 @@
                     sessionData = JSON.parse(saved);
                     tacticalAttackDirection = sessionData.attackDirection || 'left-to-right';
                     
+                    if (sessionData.filterActions) {
+                        document.getElementById('tac-filter-actions-select').value = sessionData.filterActions;
+                    }
+                    if (sessionData.attackDirection) {
+                        document.getElementById('tac-attack-direction-select').value = sessionData.attackDirection;
+                    }
+                    
                     let listaAtletas = sessionData.convocados || (sessionData.roster ? sessionData.roster.filter(p => p.selected === true) : []);
                     if (listaAtletas.length === 0 && sessionData.roster) {
                         listaAtletas = sessionData.roster;
@@ -405,6 +428,19 @@
 
             openTacticalFilterModal();
         };
+
+        function changeAttackDirectionSetting() {
+            tacticalAttackDirection = document.getElementById('tac-attack-direction-select').value;
+            sessionData.attackDirection = tacticalAttackDirection;
+            syncLogsToLocalStorage();
+            updateTacticalDirectionUI();
+            updateWatermarksAndOverlays();
+        }
+
+        function changeFilterActionsSetting() {
+            sessionData.filterActions = document.getElementById('tac-filter-actions-select').value;
+            syncLogsToLocalStorage();
+        }
 
         function updateTacTimerDisplay() {
             let min = Math.floor(tacTotalSeconds / 60);
@@ -584,7 +620,6 @@
         }
 
         function handleTacticalPitchClick(event) {
-            // Evita disparar caso clique diretamente num marcador existente
             if (event.target.classList.contains('tactical-marker')) return;
             
             const pitch = event.currentTarget;
@@ -665,10 +700,9 @@
                 <div style="flex: 1; background: #15221c; border: 1px solid #1e4d35; border-radius: 6px; padding: 8px;">
                     <h4 style="margin: 0 0 6px 0; color: #00ffcc; font-size: 0.8rem; text-align: center;">🟢 AÇÕES POSITIVAS</h4>
                     <div style="display: flex; flex-direction: column; gap: 5px;">
-                        <button class="tactical-action-btn action-positive" onclick="confirmTacticalAction('Desarme Eficaz')">🛡️ Desarme Eficaz</button>
-                        <button class="tactical-action-btn action-positive" onclick="confirmTacticalAction('Recuperação de Bola')">🔄 Recuperação de Bola</button>
-                        <button class="tactical-action-btn action-positive" onclick="confirmTacticalAction('Passe Chave / Ruptura')">🎯 Passe Chave / Ruptura</button>
-                        <button class="tactical-action-btn action-positive" onclick="confirmTacticalAction('Remate Enquadrado')">⚽ Remate Enquadrado</button>
+                        <button class="tactical-action-btn action-positive" onclick="confirmTacticalAction('Recuperação de bola', '#00ffcc')">🛡️ Recuperação de bola</button>
+                        <button class="tactical-action-btn action-positive" onclick="confirmTacticalAction('Drible com sucesso', '#00ffcc')">⚡ Drible com sucesso</button>
+                        <button class="tactical-action-btn action-positive" onclick="confirmTacticalAction('Golo Fenomenal', '#00ffcc')">⚽ Golo Fenomenal</button>
                     </div>
                 </div>`;
 
@@ -676,13 +710,13 @@
                 <div style="flex: 1; background: #221515; border: 1px solid #4d1e1e; border-radius: 6px; padding: 8px;">
                     <h4 style="margin: 0 0 6px 0; color: #ff5555; font-size: 0.8rem; text-align: center;">🔴 AÇÕES NEGATIVAS</h4>
                     <div style="display: flex; flex-direction: column; gap: 5px;">
-                        <button class="tactical-action-btn action-negative" onclick="confirmTacticalAction('Perda de Bola')">❌ Perda de Bola</button>
-                        <button class="tactical-action-btn action-negative" onclick="confirmTacticalAction('Perda em Zona Proibida')">⚠️ Perda em Zona Proibida</button>
-                        <button class="tactical-action-btn action-negative" onclick="confirmTacticalAction('Passe Errado')">↗️ Passe Errado</button>
-                        <button class="tactical-action-btn action-warning" onclick="confirmTacticalAction('Falha na Compensação')">🔄 Falha na Compensação</button>
-                        <button class="tactical-action-btn action-warning" onclick="confirmTacticalAction('Erro de Marcação')">🛡️ Erro de Marcação</button>
-                        <button class="tactical-action-btn action-negative" onclick="confirmTacticalAction('Erro de Posicionamento')">📍 Erro de Posicionamento</button>
-                        <button class="tactical-action-btn action-negative" onclick="confirmTacticalAction('Falta Evitável')">🛑 Falta Evitável</button>
+                        <button class="tactical-action-btn action-negative" onclick="confirmTacticalAction('Passes errados', '#ff5555')">↗️ Passes errados</button>
+                        <button class="tactical-action-btn action-negative" onclick="confirmTacticalAction('Perda de bola', '#ff5555')">❌ Perda de bola</button>
+                        <button class="tactical-action-btn action-negative" onclick="confirmTacticalAction('Má receção', '#ff5555')">📥 Má receção</button>
+                        <button class="tactical-action-btn action-negative" onclick="confirmTacticalAction('Pé de apoio errado', '#ff5555')">🦶 Pé de apoio errado</button>
+                        <button class="tactical-action-btn action-negative" onclick="confirmTacticalAction('Má rotação', '#ff5555')">🔄 Má rotação</button>
+                        <button class="tactical-action-btn action-negative" onclick="confirmTacticalAction('Remate errado', '#ff5555')">🎯 Remate errado</button>
+                        <button class="tactical-action-btn action-negative" onclick="confirmTacticalAction('Fora de posição', '#ff5555')">📍 Fora de posição</button>
                     </div>
                 </div>`;
 
@@ -692,11 +726,11 @@
             else container.innerHTML = positiveHTML + negativeHTML;
         }
 
-        function confirmTacticalAction(actionName) {
+        function confirmTacticalAction(actionName, colorHex) {
             document.getElementById('tac-action-modal').style.display = 'none';
             let pitch = document.getElementById('tactical-pitch');
-            addTacticalMarker(pitch, tacticalPendingX, tacticalPendingY, actionName, calculatedZoneColor);
-            logTacticalAction('DINAMO', actionName, selectedTacticalPlayer, calculatedZoneName, tacticalPendingX.toFixed(1), tacticalPendingY.toFixed(1), calculatedZoneColor);
+            addTacticalMarker(pitch, tacticalPendingX, tacticalPendingY, actionName, colorHex);
+            logTacticalAction('DINAMO', actionName, selectedTacticalPlayer, calculatedZoneName, tacticalPendingX.toFixed(1), tacticalPendingY.toFixed(1), colorHex);
         }
 
         function addTacticalMarker(pitchEl, x, y, actionName, colorHex) {
@@ -769,7 +803,7 @@
                         let entry = document.createElement('div');
                         entry.className = 'log-entry';
                         let col = l.color || '#00ffcc';
-                        entry.innerHTML = `[${p}ºP - ${l.tempo}] <b>${l.atleta}</b> (<span style="color:${col};">${l.zona}</span>): ${l.acao}`;
+                        entry.innerHTML = `[${p}ºP - ${l.tempo}] <b>{l.atleta}</b> (<span style="color:${col};">${l.zona}</span>): ${l.acao}`;
                         logBox.insertBefore(entry, logBox.firstChild);
                     });
                 }
